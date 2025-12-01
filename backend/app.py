@@ -124,6 +124,29 @@ def xml_to_dict(elem):
 def extract_all_data(data):
     combined_list = []
     equipment = data.get("Equipment", {})
+    
+    # 1. Parse Switches explicitly (to ensure isolated switches appear)
+    switches = equipment.get("Switch", [])
+    if not isinstance(switches, list):
+        switches = [switches]
+    
+    for sw in switches:
+        sw_id = ""
+        # Handle case where Switch is just a text tag <Switch>S1</Switch>
+        if isinstance(sw, str):
+            sw_id = sw
+        # Handle case where Switch is a complex object <Switch><id>S1</id>...</Switch>
+        elif isinstance(sw, dict):
+            sw_id = sw.get("switchId") or sw.get("id") or sw.get("name")
+        
+        if sw_id:
+             combined_list.append({
+                 "type": "Switch",
+                 "switchId": sw_id,
+                 "status": "ONLINE"
+             })
+
+    # 2. Parse Computer Systems & Interfaces
     computer_systems = equipment.get("ComputerSystem", [])
     if not isinstance(computer_systems, list):
         computer_systems = [computer_systems]
@@ -162,6 +185,7 @@ def extract_all_data(data):
             if isinstance(agent, dict) and agent.get("agentId") == "1":
                 agent_ip_address = agent.get("ipAddress", "")
         
+        # If no interfaces, still add the system
         if not interfaces:
              combined_list.append({
                 "type": "computerSystem",
@@ -170,8 +194,6 @@ def extract_all_data(data):
                 "vpod_name": vpod_name,
                 "interfaceId": "",
                 "macAddress": "",
-                "udevName": "",
-                "pciAddress": "",
                 "switchPortId": "",
                 "switchId": "",
                 "switchType": "",
@@ -276,6 +298,7 @@ def fetch_netconf_data():
 
         if not connection_success:
              parsed_data = []
+             # Mock data
              for i in range(1, 4):
                  parsed_data.append({
                      "computerSystemId": f"mock-server-{i}",
@@ -433,6 +456,7 @@ def get_snapshot():
             try:
                 records = json.loads(topo_json)
                 for item in records:
+                    # 1. Server Node
                     sys_id = item.get('computerSystemId')
                     if sys_id and sys_id not in discovered_nodes:
                         discovered_nodes[sys_id] = {
@@ -446,6 +470,7 @@ def get_snapshot():
                             'memoryUsage': 20
                         }
                     
+                    # 2. Switch Node
                     sw_id = item.get('switchId')
                     if sw_id and sw_id not in discovered_nodes:
                          discovered_nodes[sw_id] = {
@@ -459,6 +484,7 @@ def get_snapshot():
                             'memoryUsage': 10
                          }
 
+                    # 3. Link
                     if sys_id and sw_id:
                         link_key = f"{sys_id}-{sw_id}"
                         is_duplicate = False
@@ -468,7 +494,7 @@ def get_snapshot():
                                 break
                         
                         if not is_duplicate:
-                            # Format label to show ports on both ends
+                            # Format label
                             iface = item.get('interfaceId', '')
                             port = item.get('switchPortId', '')
                             label = f"{iface} ↔ {port}" if iface and port else (port or iface)
