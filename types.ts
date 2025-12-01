@@ -11,26 +11,33 @@ export enum DeviceStatus {
   WARNING = 'WARNING'
 }
 
+export enum AuthType {
+  PASSWORD = 'PASSWORD',
+  KEY = 'KEY'
+}
+
 export interface NetconfDeviceConfig {
   id: string;
   name: string;
   ip: string;
   port: number;
   username: string;
-  password?: string; // Optional in frontend display
+  password?: string;
+  authType?: AuthType;
+  sshKey?: string;
   type: DeviceType;
 }
 
 export interface Device extends NetconfDeviceConfig {
   status: DeviceStatus;
   uptime: string;
-  cpuLoad: number; // 0-100
-  memoryUsage: number; // 0-100
+  cpuLoad: number;
+  memoryUsage: number;
 }
 
 export interface Link {
-  source: string; // Device ID
-  target: string; // Device ID
+  source: string;
+  target: string;
   bandwidth: string;
   status: 'UP' | 'DOWN';
 }

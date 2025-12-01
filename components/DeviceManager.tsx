@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { NetconfDeviceConfig, DeviceType } from '../types';
-import { Plus, Trash2, Server, Save, X } from 'lucide-react';
+import { NetconfDeviceConfig, DeviceType, AuthType } from '../types';
+import { Plus, Trash2, Server, Save, X, Key } from 'lucide-react';
 import { api } from '../services/apiService';
 
 const DeviceManager: React.FC = () => {
@@ -10,7 +10,9 @@ const DeviceManager: React.FC = () => {
     port: 830,
     type: DeviceType.ROUTER,
     username: 'admin',
-    password: ''
+    password: '',
+    authType: AuthType.PASSWORD,
+    sshKey: ''
   });
 
   useEffect(() => {
@@ -31,6 +33,8 @@ const DeviceManager: React.FC = () => {
         port: newDevice.port || 830,
         username: newDevice.username,
         password: newDevice.password,
+        authType: newDevice.authType || AuthType.PASSWORD,
+        sshKey: newDevice.sshKey,
         type: newDevice.type || DeviceType.ROUTER
       };
       
@@ -38,7 +42,14 @@ const DeviceManager: React.FC = () => {
       await loadDevices();
       
       setIsAdding(false);
-      setNewDevice({ port: 830, type: DeviceType.ROUTER, username: 'admin', password: '' });
+      setNewDevice({ 
+        port: 830, 
+        type: DeviceType.ROUTER, 
+        username: 'admin', 
+        password: '',
+        authType: AuthType.PASSWORD,
+        sshKey: ''
+      });
     }
   };
 
@@ -101,26 +112,7 @@ const DeviceManager: React.FC = () => {
                 onChange={e => setNewDevice({...newDevice, port: parseInt(e.target.value)})}
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Username</label>
-              <input 
-                type="text" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder="admin"
-                value={newDevice.username || ''}
-                onChange={e => setNewDevice({...newDevice, username: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
-              <input 
-                type="password" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder="******"
-                value={newDevice.password || ''}
-                onChange={e => setNewDevice({...newDevice, password: e.target.value})}
-              />
-            </div>
+            
             <div>
               <label className="block text-xs font-medium text-slate-400 mb-1">Device Type</label>
               <select 
@@ -134,6 +126,63 @@ const DeviceManager: React.FC = () => {
                 <option value={DeviceType.SERVER}>Server</option>
               </select>
             </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Authentication Method</label>
+              <select 
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
+                value={newDevice.authType}
+                onChange={e => setNewDevice({...newDevice, authType: e.target.value as any})}
+              >
+                <option value={AuthType.PASSWORD}>Password</option>
+                <option value={AuthType.KEY}>SSH Key</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">Username</label>
+              <input 
+                type="text" 
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
+                placeholder="admin"
+                value={newDevice.username || ''}
+                onChange={e => setNewDevice({...newDevice, username: e.target.value})}
+              />
+            </div>
+
+            {newDevice.authType === AuthType.PASSWORD ? (
+              <div>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
+                <input 
+                  type="password" 
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
+                  placeholder="******"
+                  value={newDevice.password || ''}
+                  onChange={e => setNewDevice({...newDevice, password: e.target.value})}
+                />
+              </div>
+            ) : (
+              <div className="md:col-span-2 lg:col-span-3">
+                <label className="block text-xs font-medium text-slate-400 mb-1">SSH Private Key</label>
+                <textarea 
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs" 
+                  rows={4}
+                  placeholder="-----BEGIN RSA PRIVATE KEY-----..."
+                  value={newDevice.sshKey || ''}
+                  onChange={e => setNewDevice({...newDevice, sshKey: e.target.value})}
+                />
+                <div className="mt-2">
+                   <label className="block text-xs font-medium text-slate-400 mb-1">Key Passphrase (Optional)</label>
+                   <input 
+                    type="password" 
+                    className="w-full max-w-sm bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
+                    placeholder="Passphrase"
+                    value={newDevice.password || ''}
+                    onChange={e => setNewDevice({...newDevice, password: e.target.value})}
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <div className="mt-4 flex justify-end">
             <button 
@@ -170,7 +219,10 @@ const DeviceManager: React.FC = () => {
                 <td className="px-6 py-4">
                   <span className="bg-slate-700 px-2 py-1 rounded text-xs">{device.type}</span>
                 </td>
-                <td className="px-6 py-4 text-slate-400">{device.username}</td>
+                <td className="px-6 py-4 text-slate-400 flex items-center gap-2">
+                   {device.authType === AuthType.KEY ? <Key size={14}/> : 'Pwd'}
+                   <span>{device.username}</span>
+                </td>
                 <td className="px-6 py-4 text-right">
                   <button 
                     onClick={() => handleRemove(device.id)}
