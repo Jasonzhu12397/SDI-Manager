@@ -138,7 +138,6 @@ def extract_all_data(data):
     for ipv4 in ipv4_networks:
         if isinstance(ipv4, dict):
             network_name = ipv4.get("iPv4NetworkId", "")
-            # Filter removed: Capture ALL networks
             network_info.append({
                 "networkName": network_name,
                 "ipAddress": ipv4.get("semAddrActive", "")
@@ -162,12 +161,8 @@ def extract_all_data(data):
         for agent in agents:
             if isinstance(agent, dict) and agent.get("agentId") == "1":
                 agent_ip_address = agent.get("ipAddress", "")
-
-        # Use a flag to check if we found any interfaces. If not, we might still want to add the system.
-        # But based on the provided logic, we iterate interfaces.
         
         if not interfaces:
-             # Add system even without interfaces
              combined_list.append({
                 "type": "computerSystem",
                 "computerSystemId": system_id,
@@ -214,10 +209,7 @@ def extract_all_data(data):
                 "ipAddress": ""
             }
 
-            # Associate network info if available
             if vpod_name and network_info:
-                # If there are multiple networks, this creates multiple entries per interface
-                # capturing the cross product as per original script logic
                 for info in network_info:
                     entry = base_entry.copy()
                     entry["networkName"] = info["networkName"]
@@ -237,7 +229,6 @@ def fetch_netconf_data():
     try:
         cur.execute("SELECT id, name, ip, port, username, password, type, auth_type, ssh_key FROM devices")
     except mariadb.Error:
-        # Fallback if columns missing
         cur.execute("SELECT id, name, ip, port, username, password, type, 'PASSWORD', '' FROM devices")
         
     devices = cur.fetchall()
@@ -283,16 +274,15 @@ def fetch_netconf_data():
             print(f"Fetch Error {ip}: {e}")
             pass
 
-        # Use mock data if connection failed (Dev mode)
         if not connection_success:
              parsed_data = []
-             # Mock data structure matching extraction
              for i in range(1, 4):
                  parsed_data.append({
                      "computerSystemId": f"mock-server-{i}",
                      "vpod_name": f"vpod-mock",
                      "switchId": "mock-leaf-01",
                      "switchPortId": f"1/1/{i}",
+                     "interfaceId": f"eth{i-1}",
                      "bmc IPaddress": f"10.0.0.{100+i}",
                      "type": "NetworkInterface"
                  })
@@ -443,9 +433,6 @@ def get_snapshot():
             try:
                 records = json.loads(topo_json)
                 for item in records:
-                    # Logic to visualize the raw data in the topology
-                    
-                    # 1. Server Node
                     sys_id = item.get('computerSystemId')
                     if sys_id and sys_id not in discovered_nodes:
                         discovered_nodes[sys_id] = {
@@ -459,7 +446,6 @@ def get_snapshot():
                             'memoryUsage': 20
                         }
                     
-                    # 2. Switch Node
                     sw_id = item.get('switchId')
                     if sw_id and sw_id not in discovered_nodes:
                          discovered_nodes[sw_id] = {
@@ -473,11 +459,8 @@ def get_snapshot():
                             'memoryUsage': 10
                          }
 
-                    # 3. Link (Interface -> Switch Port)
                     if sys_id and sw_id:
-                        # Avoid duplicate links
                         link_key = f"{sys_id}-{sw_id}"
-                        # Simple check for duplicates
                         is_duplicate = False
                         for l in discovered_links:
                             if l['source'] == sys_id and l['target'] == sw_id:
@@ -485,12 +468,17 @@ def get_snapshot():
                                 break
                         
                         if not is_duplicate:
+                            # Format label to show ports on both ends
+                            iface = item.get('interfaceId', '')
+                            port = item.get('switchPortId', '')
+                            label = f"{iface} ↔ {port}" if iface and port else (port or iface)
+
                             discovered_links.append({
                                 'source': sys_id,
                                 'target': sw_id,
                                 'bandwidth': '10Gbps',
                                 'status': 'UP',
-                                'label': item.get('switchPortId')
+                                'label': label
                             })
 
             except json.JSONDecodeError:
