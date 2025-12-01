@@ -1,298 +1,334 @@
 import React, { useState, useEffect } from 'react';
-import { NetconfDeviceConfig, DeviceType, AuthType } from '../types';
-import { Plus, Trash2, Server, Save, X, Key, Network, Box, Router } from 'lucide-react';
-import { api } from '../services/apiService';
+import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Router } from 'lucide-react';
+import Dashboard from './components/Dashboard';
+import TopologyGraph from './components/TopologyGraph';
+import AlarmTable from './components/AlarmTable';
+import ConfigCompare from './components/ConfigCompare';
+import Login from './components/Login';
+import DeviceManager from './components/DeviceManager';
+import NodeDetailsPanel from './components/NodeDetailsPanel';
+import { api } from './services/apiService';
+import { Device, Link, Alarm } from './types';
 
-interface DeviceManagerProps {
-  filterCategory?: 'COMPUTE' | 'NETWORK';
-}
+// Main App Component
+const App: React.FC = () => {
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState('admin');
 
-const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
-  const [devices, setDevices] = useState<NetconfDeviceConfig[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
+  // Add new tabs: 'compute' and 'network'
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'topology' | 'alarms' | 'config' | 'devices' | 'compute' | 'network'>('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
-  // Determine default type based on filter
-  const defaultType = filterCategory === 'COMPUTE' ? DeviceType.SERVER : DeviceType.ROUTER;
+  // Runtime Data State
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [links, setLinks] = useState<Link[]>([]);
+  const [alarms, setAlarms] = useState<Alarm[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const [newDevice, setNewDevice] = useState<Partial<NetconfDeviceConfig>>({
-    port: 830,
-    type: defaultType,
-    username: 'admin',
-    password: '',
-    authType: AuthType.PASSWORD,
-    sshKey: ''
-  });
+  // Interaction State
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
 
+  // Modal State
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ old: '', new: '', confirm: '' });
+  const [pwdMsg, setPwdMsg] = useState({ type: '', text: '' });
+  
+  // Initial Load upon login
   useEffect(() => {
-    loadDevices();
-  }, []);
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [isAuthenticated]);
 
-  // Reset form and adding state when filter changes (e.g. switching tabs)
-  useEffect(() => {
-    setNewDevice(prev => ({
-        ...prev,
-        type: filterCategory === 'COMPUTE' ? DeviceType.SERVER : DeviceType.ROUTER
-    }));
-    setIsAdding(false);
-  }, [filterCategory]);
-
-  const loadDevices = async () => {
-    const fetched = await api.getDevices();
-    setDevices(fetched);
+  const fetchData = async () => {
+    setLoading(true);
+    const data = await api.getSnapshot();
+    setDevices(data.nodes);
+    setLinks(data.links);
+    setAlarms(data.alarms);
+    setLoading(false);
   };
 
-  // Filter devices based on the category prop
-  const displayedDevices = devices.filter(device => {
-      if (!filterCategory) return true; // Show all if no filter
-      if (filterCategory === 'COMPUTE') return device.type === DeviceType.SERVER;
-      if (filterCategory === 'NETWORK') return device.type !== DeviceType.SERVER; // Assume Router, Switch, Firewall are network
-      return true;
-  });
-
-  const getTitle = () => {
-      if (filterCategory === 'COMPUTE') return 'Compute Nodes';
-      if (filterCategory === 'NETWORK') return 'Network Devices';
-      return 'Device Management';
+  const handleManualFetch = async () => {
+    setLoading(true);
+    await api.triggerFetch();
+    // Wait a moment for backend to process mock/real fetch then reload UI
+    setTimeout(() => {
+        fetchData();
+    }, 1500);
   };
 
-  const handleSave = async () => {
-    if (newDevice.name && newDevice.ip && newDevice.username) {
-      const devicePayload: NetconfDeviceConfig = {
-        id: `dev-${Date.now()}`,
-        name: newDevice.name,
-        ip: newDevice.ip,
-        port: newDevice.port || 830,
-        username: newDevice.username,
-        password: newDevice.password,
-        authType: newDevice.authType || AuthType.PASSWORD,
-        sshKey: newDevice.sshKey,
-        type: newDevice.type || DeviceType.ROUTER
-      };
-      
-      await api.addDevice(devicePayload);
-      await loadDevices();
-      
-      setIsAdding(false);
-      // Reset form
-      setNewDevice({ 
-        port: 830, 
-        type: defaultType, 
-        username: 'admin', 
-        password: '',
-        authType: AuthType.PASSWORD,
-        sshKey: ''
-      });
+  const handleClearAlarm = async (id: string) => {
+    if(window.confirm('Are you sure you want to dismiss this alarm?')) {
+        await api.clearAlarm(id);
+        fetchData();
     }
   };
 
-  const handleRemove = async (id: string) => {
-    if(window.confirm("Are you sure you want to remove this device?")) {
-        await api.removeDevice(id);
-        await loadDevices();
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwdForm.new !== pwdForm.confirm) {
+        setPwdMsg({ type: 'error', text: 'New passwords do not match' });
+        return;
+    }
+    const res = await api.changePassword(currentUser, pwdForm.old, pwdForm.new);
+    if (res.success) {
+        setPwdMsg({ type: 'success', text: 'Password changed successfully' });
+        setTimeout(() => setShowPasswordModal(false), 1500);
+        setPwdForm({ old: '', new: '', confirm: '' });
+    } else {
+        setPwdMsg({ type: 'error', text: res.message || 'Failed to change password' });
     }
   };
+
+  const handleDownload = () => {
+    const data = {
+      timestamp: new Date().toISOString(),
+      topology: { nodes: devices, links },
+      alarms
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `network-snapshot-${new Date().getTime()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  const handleLoginSuccess = (user: string) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+  };
+
+  const handleNavigate = (tab: any) => {
+    setActiveTab(tab);
+  };
+
+  const handleNodeClick = (device: Device) => {
+    setSelectedDevice(device);
+  };
+
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLoginSuccess} />;
+  }
+
+  // Updated Sidebar Items
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'compute', label: 'Compute Nodes', icon: Server },
+    { id: 'network', label: 'Network Devices', icon: Router },
+    { id: 'devices', label: 'Device Manager', icon: Settings },
+    { id: 'topology', label: 'Topology Map', icon: Network },
+    { id: 'alarms', label: 'Alarms & Events', icon: AlertOctagon },
+    { id: 'config', label: 'Config Compare', icon: FileDiff },
+  ];
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <div>
-           <h2 className="text-xl font-bold text-white">{getTitle()}</h2>
-           <p className="text-slate-400 text-sm">
-             {filterCategory ? `Manage ${filterCategory.toLowerCase()} resources` : 'Configure NETCONF targets for monitoring'}
-           </p>
-        </div>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20"
-        >
-          <Plus size={18} /> Add {filterCategory === 'COMPUTE' ? 'Node' : 'Device'}
-        </button>
-      </div>
-
-      {isAdding && (
-        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl mb-6">
-          <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-white">Add New {filterCategory === 'COMPUTE' ? 'Node' : 'Device'}</h3>
-            <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Hostname</label>
-              <input 
-                type="text" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder={filterCategory === 'COMPUTE' ? "worker-node-01" : "Core-Router-01"}
-                value={newDevice.name || ''}
-                onChange={e => setNewDevice({...newDevice, name: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">IP Address</label>
-              <input 
-                type="text" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder="192.168.1.1"
-                value={newDevice.ip || ''}
-                onChange={e => setNewDevice({...newDevice, ip: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">NETCONF Port</label>
-              <input 
-                type="number" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder="830"
-                value={newDevice.port || 830}
-                onChange={e => setNewDevice({...newDevice, port: parseInt(e.target.value)})}
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Device Type</label>
-              <select 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
-                value={newDevice.type}
-                onChange={e => setNewDevice({...newDevice, type: e.target.value as any})}
-                disabled={!!filterCategory} // Disable if filtered
-              >
-                 {(!filterCategory || filterCategory === 'NETWORK') && (
-                    <>
-                        <option value={DeviceType.ROUTER}>Router</option>
-                        <option value={DeviceType.SWITCH}>Switch</option>
-                        <option value={DeviceType.FIREWALL}>Firewall</option>
-                    </>
-                )}
-                {(!filterCategory || filterCategory === 'COMPUTE') && (
-                    <option value={DeviceType.SERVER}>Server</option>
-                )}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Authentication Method</label>
-              <select 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
-                value={newDevice.authType}
-                onChange={e => setNewDevice({...newDevice, authType: e.target.value as any})}
-              >
-                <option value={AuthType.PASSWORD}>Password</option>
-                <option value={AuthType.KEY}>SSH Key</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">Username</label>
-              <input 
-                type="text" 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder="admin"
-                value={newDevice.username || ''}
-                onChange={e => setNewDevice({...newDevice, username: e.target.value})}
-              />
-            </div>
-
-            {newDevice.authType === AuthType.PASSWORD ? (
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Password</label>
-                <input 
-                  type="password" 
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                  placeholder="******"
-                  value={newDevice.password || ''}
-                  onChange={e => setNewDevice({...newDevice, password: e.target.value})}
-                />
-              </div>
-            ) : (
-              <div className="md:col-span-2 lg:col-span-3">
-                <label className="block text-xs font-medium text-slate-400 mb-1">SSH Private Key</label>
-                <textarea 
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white font-mono text-xs" 
-                  rows={4}
-                  placeholder="-----BEGIN RSA PRIVATE KEY-----..."
-                  value={newDevice.sshKey || ''}
-                  onChange={e => setNewDevice({...newDevice, sshKey: e.target.value})}
-                />
-                <div className="mt-2">
-                   <label className="block text-xs font-medium text-slate-400 mb-1">Key Passphrase (Optional)</label>
-                   <input 
-                    type="password" 
-                    className="w-full max-w-sm bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                    placeholder="Passphrase"
-                    value={newDevice.password || ''}
-                    onChange={e => setNewDevice({...newDevice, password: e.target.value})}
-                  />
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="mt-4 flex justify-end">
-            <button 
-              onClick={handleSave}
-              className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
-            >
-              <Save size={18} /> Save {filterCategory === 'COMPUTE' ? 'Node' : 'Device'}
-            </button>
-          </div>
-        </div>
+    <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
+      
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
       )}
 
-      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-lg">
-        <table className="w-full text-left text-sm text-slate-300">
-          <thead className="bg-slate-900/50 text-xs uppercase text-slate-400 font-semibold">
-            <tr>
-              <th className="px-6 py-4">Name</th>
-              <th className="px-6 py-4">IP Address</th>
-              <th className="px-6 py-4">Port</th>
-              <th className="px-6 py-4">Type</th>
-              <th className="px-6 py-4">Auth</th>
-              <th className="px-6 py-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-700">
-            {displayedDevices.map((device) => (
-              <tr key={device.id} className="hover:bg-slate-700/30 transition-colors">
-                <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
-                  {device.type === DeviceType.SERVER ? <Server size={16} className="text-slate-500"/> : <Router size={16} className="text-slate-500"/>}
-                  {device.name}
-                </td>
-                <td className="px-6 py-4 font-mono">{device.ip}</td>
-                <td className="px-6 py-4 font-mono text-slate-400">{device.port}</td>
-                <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-xs ${device.type === DeviceType.SERVER ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}`}>
-                      {device.type}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-slate-400 flex items-center gap-2">
-                   {device.authType === AuthType.KEY ? <Key size={14}/> : 'Pwd'}
-                   <span>{device.username}</span>
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <button 
-                    onClick={() => handleRemove(device.id)}
-                    className="text-red-400 hover:text-red-300 p-1 hover:bg-red-500/10 rounded transition-colors"
-                    title="Remove Device"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
+      {/* Sidebar */}
+      <aside className={`
+        fixed inset-y-0 left-0 z-30 w-64 bg-slate-900 border-r border-slate-800 transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:relative lg:translate-x-0
+      `}>
+        <div className="h-full flex flex-col">
+          <div className="p-6 border-b border-slate-800 flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/30">
+              <Share2 className="text-white w-5 h-5" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight">SDI Manager</h1>
+          </div>
+
+          <nav className="flex-1 px-4 py-6 space-y-1">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id as any);
+                  setSidebarOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === item.id 
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </button>
             ))}
-            {displayedDevices.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                  <div className="flex flex-col items-center gap-2">
-                     <Box size={32} className="opacity-50"/>
-                     <p>No {filterCategory ? filterCategory.toLowerCase() : ''} devices configured.</p>
-                     <button onClick={() => setIsAdding(true)} className="text-blue-400 hover:underline text-xs">Add New</button>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+          </nav>
+
+          <div className="p-4 border-t border-slate-800">
+             <div className="bg-slate-800/50 rounded-lg p-4 mb-4 border border-slate-700">
+                <p className="text-xs text-slate-400 mb-2">Authenticated as</p>
+                <div className="flex items-center gap-2 mb-3">
+                   <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                   <span className="text-sm font-semibold text-white">{currentUser}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                    <button 
+                        onClick={() => { setShowPasswordModal(true); setPwdMsg({type:'',text:''}); }}
+                        className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-slate-200 transition-colors flex items-center justify-center gap-1"
+                    >
+                        <Lock size={12}/> Password
+                    </button>
+                    <button 
+                        onClick={() => setIsAuthenticated(false)} 
+                        className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2 py-1.5 rounded transition-colors"
+                    >
+                        Sign Out
+                    </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0 relative">
+        {/* Header */}
+        <header className="h-16 bg-slate-900/50 backdrop-blur-md border-b border-slate-800 flex items-center justify-between px-6 sticky top-0 z-10">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden text-slate-400 hover:text-white"
+            >
+              <Menu />
+            </button>
+            <h2 className="text-lg font-semibold text-white capitalize">{activeTab.replace('-', ' ')}</h2>
+          </div>
+
+          <div className="flex items-center gap-3">
+             <button 
+                onClick={handleManualFetch}
+                disabled={loading}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-medium rounded-lg transition-colors shadow-sm"
+             >
+                {loading ? 'Executing NETCONF...' : 'Fetch Data'}
+             </button>
+
+             <button 
+                onClick={handleDownload}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors" 
+                title="Download JSON Snapshot"
+             >
+                <Download size={20} />
+             </button>
+          </div>
+        </header>
+
+        {/* Viewport */}
+        <div className="flex-1 overflow-y-auto p-6 scroll-smooth relative">
+          {activeTab === 'dashboard' && (
+            <Dashboard 
+              devices={devices} 
+              alarms={alarms} 
+              onNavigate={handleNavigate}
+            />
+          )}
+          
+          {/* New Device Manager Routes with Filtering */}
+          {activeTab === 'devices' && (
+            <DeviceManager />
+          )}
+          {activeTab === 'compute' && (
+            <DeviceManager filterCategory="COMPUTE" />
+          )}
+          {activeTab === 'network' && (
+            <DeviceManager filterCategory="NETWORK" />
+          )}
+          
+          {activeTab === 'topology' && (
+            <TopologyGraph 
+                nodes={devices} 
+                links={links} 
+                onRefresh={fetchData} 
+                onNodeClick={handleNodeClick}
+            />
+          )}
+          {activeTab === 'alarms' && <AlarmTable alarms={alarms} onClearAlarm={handleClearAlarm} />}
+          {activeTab === 'config' && <ConfigCompare />}
+        </div>
+        
+        {/* Node Details Slide-over */}
+        <NodeDetailsPanel 
+            device={selectedDevice} 
+            links={links} 
+            onClose={() => setSelectedDevice(null)} 
+        />
+
+        {/* Change Password Modal */}
+        {showPasswordModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-6 shadow-2xl relative">
+                    <button 
+                        onClick={() => setShowPasswordModal(false)}
+                        className="absolute top-4 right-4 text-slate-400 hover:text-white"
+                    >
+                        <X size={20}/>
+                    </button>
+                    <h3 className="text-lg font-bold text-white mb-4">Change Password</h3>
+                    <form onSubmit={handlePasswordChange} className="space-y-4">
+                        <div>
+                            <label className="text-xs text-slate-400 uppercase font-semibold">Old Password</label>
+                            <input 
+                                type="password" 
+                                required
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white mt-1 focus:border-blue-500 outline-none"
+                                value={pwdForm.old}
+                                onChange={e => setPwdForm({...pwdForm, old: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-slate-400 uppercase font-semibold">New Password</label>
+                            <input 
+                                type="password" 
+                                required
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white mt-1 focus:border-blue-500 outline-none"
+                                value={pwdForm.new}
+                                onChange={e => setPwdForm({...pwdForm, new: e.target.value})}
+                            />
+                        </div>
+                        <div>
+                            <label className="text-xs text-slate-400 uppercase font-semibold">Confirm New Password</label>
+                            <input 
+                                type="password" 
+                                required
+                                className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-white mt-1 focus:border-blue-500 outline-none"
+                                value={pwdForm.confirm}
+                                onChange={e => setPwdForm({...pwdForm, confirm: e.target.value})}
+                            />
+                        </div>
+                        
+                        {pwdMsg.text && (
+                            <div className={`text-xs p-2 rounded ${pwdMsg.type === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                {pwdMsg.text}
+                            </div>
+                        )}
+
+                        <button type="submit" className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded transition-colors">
+                            Update Password
+                        </button>
+                    </form>
+                </div>
+            </div>
+        )}
+      </main>
     </div>
   );
 };
 
-export default DeviceManager;
+export default App;
