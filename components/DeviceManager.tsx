@@ -85,7 +85,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
   };
 
   const handleRemove = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+    e.stopPropagation(); 
     if(window.confirm("Are you sure you want to remove this device?")) {
         await api.removeDevice(id);
         await loadDevices();
@@ -258,29 +258,29 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
                 className="hover:bg-slate-700/30 transition-colors cursor-pointer group"
                 onClick={() => setSelectedDevice(device)}
               >
-                <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
-                  {device.type === DeviceType.SERVER ? <Server size={18} className="text-blue-400"/> : <Router size={18} className="text-purple-400"/>}
+                <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
+                  {device.type === DeviceType.SERVER ? <Server size={16} className="text-slate-500"/> : <Router size={16} className="text-slate-500"/>}
                   {device.name}
                 </td>
-                <td className="px-6 py-4 font-mono text-slate-400">{device.ip}</td>
+                <td className="px-6 py-4 font-mono">{device.ip}</td>
                 <td className="px-6 py-4">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${device.type === DeviceType.SERVER ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'}`}>
+                  <span className={`px-2 py-1 rounded text-xs ${device.type === DeviceType.SERVER ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}`}>
                       {device.type}
                   </span>
                 </td>
                 <td className="px-6 py-4">
-                   <span className={`flex items-center gap-2 text-xs font-semibold ${device.status === 'ONLINE' ? 'text-emerald-400' : 'text-red-400'}`}>
-                      <span className={`w-2 h-2 rounded-full ${device.status === 'ONLINE' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`}></span>
+                   <span className={`flex items-center gap-1.5 text-xs font-medium ${device.status === 'ONLINE' ? 'text-emerald-400' : 'text-red-400'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${device.status === 'ONLINE' ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
                       {device.status}
                    </span>
                 </td>
-                <td className="px-6 py-4 text-right flex items-center justify-end">
-                  <span className="text-slate-500 opacity-0 group-hover:opacity-100 transition-all text-xs mr-3 flex items-center gap-1">
-                     View Details <ChevronRight size={12}/>
+                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                  <span className="text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity text-xs flex items-center mr-2">
+                     Details <ChevronRight size={14}/>
                   </span>
                   <button 
                     onClick={(e) => handleRemove(device.id, e)}
-                    className="text-slate-500 hover:text-red-400 p-2 hover:bg-red-500/10 rounded-lg transition-colors z-10"
+                    className="text-red-400 hover:text-red-300 p-1 hover:bg-red-500/10 rounded transition-colors"
                     title="Remove Device"
                   >
                     <Trash2 size={16} />
@@ -290,15 +290,11 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
             ))}
             {displayedDevices.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-16 text-center text-slate-500">
-                  <div className="flex flex-col items-center gap-3">
-                     <div className="p-3 bg-slate-800/50 rounded-full">
-                       <Box size={24} className="opacity-50"/>
-                     </div>
-                     <p>No {filterCategory ? filterCategory.toLowerCase() : ''} devices found.</p>
-                     <button onClick={() => setIsAdding(true)} className="text-blue-400 hover:text-blue-300 text-sm font-medium mt-1">
-                        Add your first device
-                     </button>
+                <td colSpan={5} className="px-6 py-12 text-center text-slate-500">
+                  <div className="flex flex-col items-center gap-2">
+                     <Box size={32} className="opacity-50"/>
+                     <p>No {filterCategory ? filterCategory.toLowerCase() : ''} devices configured.</p>
+                     <button onClick={() => setIsAdding(true)} className="text-blue-400 hover:underline text-xs">Add New</button>
                   </div>
                 </td>
               </tr>
