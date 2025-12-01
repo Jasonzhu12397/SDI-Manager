@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import {
   select,
@@ -12,7 +13,7 @@ import {
   Simulation
 } from 'd3';
 import { Device, Link, DeviceStatus, DeviceType } from '../types';
-import { ZoomIn, ZoomOut, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 interface TopologyGraphProps {
   nodes: Device[];
@@ -33,14 +34,6 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
       case DeviceStatus.OFFLINE: return '#ef4444'; // red-500
       default: return '#64748b';
     }
-  };
-
-  // Helper to get shape/icon by type
-  const getDeviceIcon = (type: DeviceType) => {
-     // Simplified representation: 
-     // Router = Square, Switch = Circle, Server = Rect, Firewall = Triangle-ish (path)
-     // D3 handles shapes easily with paths or basic shapes
-     return type;
   };
 
   useEffect(() => {
@@ -69,12 +62,12 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
 
     // Simulation Setup
     const simulation = forceSimulation(nodes as SimulationNodeDatum[])
-      .force("link", forceLink(links).id((d: any) => d.id).distance(150))
-      .force("charge", forceManyBody().strength(-500))
+      .force("link", forceLink(links).id((d: any) => d.id).distance(200)) // Increased distance for labels
+      .force("charge", forceManyBody().strength(-800))
       .force("center", forceCenter(width / 2, height / 2))
-      .force("collide", forceCollide().radius(40));
+      .force("collide", forceCollide().radius(60));
 
-    // Draw Links
+    // Draw Links (Lines)
     const link = g.append("g")
       .attr("stroke", "#475569") // slate-600
       .attr("stroke-opacity", 0.6)
@@ -83,6 +76,22 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
       .join("line")
       .attr("stroke-width", (d) => Math.sqrt(parseInt(d.bandwidth || '1')))
       .attr("stroke", (d: any) => d.status === 'DOWN' ? '#ef4444' : '#475569');
+
+    // Draw Link Labels (Ports)
+    const linkLabel = g.append("g")
+      .attr("class", "link-labels")
+      .selectAll("text")
+      .data(links)
+      .join("text")
+      .text((d: any) => d.label || '')
+      .attr("font-size", "10px")
+      .attr("fill", "#94a3b8") // slate-400
+      .attr("text-anchor", "middle")
+      .attr("font-family", "monospace")
+      .style("background-color", "#000"); // Note: SVG text doesn't support bg-color directly without rect, using text-shadow for visibility
+    
+    // Add text shadow for legibility over lines
+    linkLabel.style("text-shadow", "0px 0px 3px #0f172a");
 
     // Draw Nodes
     const node = g.append("g")
@@ -100,18 +109,19 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
       .attr("stroke", (d: any) => getStatusColor(d.status))
       .attr("stroke-width", 3);
 
-    // Node Label
+    // Node Name Label
     node.append("text")
       .attr("dx", 0)
       .attr("dy", 40)
       .text((d: any) => d.name)
       .attr("text-anchor", "middle")
       .attr("fill", "#e2e8f0")
-      .style("font-size", "10px")
+      .style("font-size", "11px")
+      .style("font-weight", "bold")
       .style("pointer-events", "none")
       .attr("stroke", "none");
     
-    // Node Type Label (Icon simplified as text char for now, or SVG path)
+    // Node Type/Icon
     node.append("text")
       .attr("dy", 5)
       .attr("text-anchor", "middle")
@@ -130,6 +140,10 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
         .attr("y1", (d: any) => d.source.y)
         .attr("x2", (d: any) => d.target.x)
         .attr("y2", (d: any) => d.target.y);
+      
+      linkLabel
+        .attr("x", (d: any) => (d.source.x + d.target.x) / 2)
+        .attr("y", (d: any) => (d.source.y + d.target.y) / 2);
 
       node
         .attr("transform", (d: any) => `translate(${d.x},${d.y})`);
