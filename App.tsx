@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X } from 'lucide-react';
 import Dashboard from './components/Dashboard';
@@ -96,6 +97,10 @@ const App: React.FC = () => {
   const handleLoginSuccess = (user: string) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
+  };
+
+  const handleNavigate = (tab: 'dashboard' | 'topology' | 'alarms' | 'config' | 'devices') => {
+    setActiveTab(tab);
   };
 
   if (!isAuthenticated) {
@@ -217,7 +222,13 @@ const App: React.FC = () => {
 
         {/* Viewport */}
         <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
-          {activeTab === 'dashboard' && <Dashboard devices={devices} alarms={alarms} />}
+          {activeTab === 'dashboard' && (
+            <Dashboard 
+              devices={devices} 
+              alarms={alarms} 
+              onNavigate={handleNavigate}
+            />
+          )}
           {activeTab === 'devices' && (
             <DeviceManager />
           )}
