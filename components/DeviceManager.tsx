@@ -1,14 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { NetconfDeviceConfig, DeviceType, AuthType } from '../types';
-import { Plus, Trash2, Server, Save, X, Key } from 'lucide-react';
+import { Plus, Trash2, Server, Save, X, Key, Network, Box, Router } from 'lucide-react';
 import { api } from '../services/apiService';
 
-const DeviceManager: React.FC = () => {
+interface DeviceManagerProps {
+  filterCategory?: 'COMPUTE' | 'NETWORK';
+}
+
+const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
   const [devices, setDevices] = useState<NetconfDeviceConfig[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  
+  // Determine default type based on filter
+  const defaultType = filterCategory === 'COMPUTE' ? DeviceType.SERVER : DeviceType.ROUTER;
+
   const [newDevice, setNewDevice] = useState<Partial<NetconfDeviceConfig>>({
     port: 830,
-    type: DeviceType.ROUTER,
+    type: defaultType,
     username: 'admin',
     password: '',
     authType: AuthType.PASSWORD,
@@ -19,9 +27,32 @@ const DeviceManager: React.FC = () => {
     loadDevices();
   }, []);
 
+  // Reset form and adding state when filter changes (e.g. switching tabs)
+  useEffect(() => {
+    setNewDevice(prev => ({
+        ...prev,
+        type: filterCategory === 'COMPUTE' ? DeviceType.SERVER : DeviceType.ROUTER
+    }));
+    setIsAdding(false);
+  }, [filterCategory]);
+
   const loadDevices = async () => {
     const fetched = await api.getDevices();
     setDevices(fetched);
+  };
+
+  // Filter devices based on the category prop
+  const displayedDevices = devices.filter(device => {
+      if (!filterCategory) return true; // Show all if no filter
+      if (filterCategory === 'COMPUTE') return device.type === DeviceType.SERVER;
+      if (filterCategory === 'NETWORK') return device.type !== DeviceType.SERVER; // Assume Router, Switch, Firewall are network
+      return true;
+  });
+
+  const getTitle = () => {
+      if (filterCategory === 'COMPUTE') return 'Compute Nodes';
+      if (filterCategory === 'NETWORK') return 'Network Devices';
+      return 'Device Management';
   };
 
   const handleSave = async () => {
@@ -42,9 +73,10 @@ const DeviceManager: React.FC = () => {
       await loadDevices();
       
       setIsAdding(false);
+      // Reset form
       setNewDevice({ 
         port: 830, 
-        type: DeviceType.ROUTER, 
+        type: defaultType, 
         username: 'admin', 
         password: '',
         authType: AuthType.PASSWORD,
@@ -64,21 +96,23 @@ const DeviceManager: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <div>
-           <h2 className="text-xl font-bold text-white">Device Management</h2>
-           <p className="text-slate-400 text-sm">Configure NETCONF targets for monitoring</p>
+           <h2 className="text-xl font-bold text-white">{getTitle()}</h2>
+           <p className="text-slate-400 text-sm">
+             {filterCategory ? `Manage ${filterCategory.toLowerCase()} resources` : 'Configure NETCONF targets for monitoring'}
+           </p>
         </div>
         <button 
           onClick={() => setIsAdding(true)}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20"
         >
-          <Plus size={18} /> Add Device
+          <Plus size={18} /> Add {filterCategory === 'COMPUTE' ? 'Node' : 'Device'}
         </button>
       </div>
 
       {isAdding && (
         <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h3 className="text-lg font-semibold text-white">Add New Device</h3>
+            <h3 className="text-lg font-semibold text-white">Add New {filterCategory === 'COMPUTE' ? 'Node' : 'Device'}</h3>
             <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-white"><X size={20}/></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -87,7 +121,7 @@ const DeviceManager: React.FC = () => {
               <input 
                 type="text" 
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white" 
-                placeholder="Core-Router-01"
+                placeholder={filterCategory === 'COMPUTE' ? "worker-node-01" : "Core-Router-01"}
                 value={newDevice.name || ''}
                 onChange={e => setNewDevice({...newDevice, name: e.target.value})}
               />
@@ -119,11 +153,18 @@ const DeviceManager: React.FC = () => {
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
                 value={newDevice.type}
                 onChange={e => setNewDevice({...newDevice, type: e.target.value as any})}
+                disabled={!!filterCategory} // Disable if filtered
               >
-                <option value={DeviceType.ROUTER}>Router</option>
-                <option value={DeviceType.SWITCH}>Switch</option>
-                <option value={DeviceType.FIREWALL}>Firewall</option>
-                <option value={DeviceType.SERVER}>Server</option>
+                 {(!filterCategory || filterCategory === 'NETWORK') && (
+                    <>
+                        <option value={DeviceType.ROUTER}>Router</option>
+                        <option value={DeviceType.SWITCH}>Switch</option>
+                        <option value={DeviceType.FIREWALL}>Firewall</option>
+                    </>
+                )}
+                {(!filterCategory || filterCategory === 'COMPUTE') && (
+                    <option value={DeviceType.SERVER}>Server</option>
+                )}
               </select>
             </div>
 
@@ -189,7 +230,7 @@ const DeviceManager: React.FC = () => {
               onClick={handleSave}
               className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
             >
-              <Save size={18} /> Save Device
+              <Save size={18} /> Save {filterCategory === 'COMPUTE' ? 'Node' : 'Device'}
             </button>
           </div>
         </div>
@@ -208,16 +249,18 @@ const DeviceManager: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700">
-            {devices.map((device) => (
+            {displayedDevices.map((device) => (
               <tr key={device.id} className="hover:bg-slate-700/30 transition-colors">
                 <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
-                  <Server size={16} className="text-slate-500"/>
+                  {device.type === DeviceType.SERVER ? <Server size={16} className="text-slate-500"/> : <Router size={16} className="text-slate-500"/>}
                   {device.name}
                 </td>
                 <td className="px-6 py-4 font-mono">{device.ip}</td>
                 <td className="px-6 py-4 font-mono text-slate-400">{device.port}</td>
                 <td className="px-6 py-4">
-                  <span className="bg-slate-700 px-2 py-1 rounded text-xs">{device.type}</span>
+                  <span className={`px-2 py-1 rounded text-xs ${device.type === DeviceType.SERVER ? 'bg-blue-500/20 text-blue-300' : 'bg-purple-500/20 text-purple-300'}`}>
+                      {device.type}
+                  </span>
                 </td>
                 <td className="px-6 py-4 text-slate-400 flex items-center gap-2">
                    {device.authType === AuthType.KEY ? <Key size={14}/> : 'Pwd'}
@@ -234,10 +277,14 @@ const DeviceManager: React.FC = () => {
                 </td>
               </tr>
             ))}
-            {devices.length === 0 && (
+            {displayedDevices.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                  No devices configured. Click "Add Device" to start.
+                  <div className="flex flex-col items-center gap-2">
+                     <Box size={32} className="opacity-50"/>
+                     <p>No {filterCategory ? filterCategory.toLowerCase() : ''} devices configured.</p>
+                     <button onClick={() => setIsAdding(true)} className="text-blue-400 hover:underline text-xs">Add New</button>
+                  </div>
                 </td>
               </tr>
             )}
