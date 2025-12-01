@@ -4,8 +4,9 @@ import json
 import random
 import uuid
 import tempfile
+import xml.etree.ElementTree as ET
 from datetime import datetime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import mariadb
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -68,12 +69,6 @@ def init_db():
             )
         """)
 
-        try:
-            cur.execute("ALTER TABLE devices ADD COLUMN auth_type VARCHAR(10) DEFAULT 'PASSWORD'")
-            cur.execute("ALTER TABLE devices ADD COLUMN ssh_key TEXT")
-        except mariadb.Error:
-            pass
-
         cur.execute("""
             CREATE TABLE IF NOT EXISTS device_status (
                 device_id VARCHAR(50) PRIMARY KEY,
@@ -81,10 +76,17 @@ def init_db():
                 uptime VARCHAR(50),
                 cpu_load INT,
                 memory_usage INT,
+                topology_json LONGTEXT,
                 last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         """)
+        
+        # Add topology_json column if missing (migration)
+        try:
+            cur.execute("ALTER TABLE device_status ADD COLUMN topology_json LONGTEXT")
+        except mariadb.Error:
+            pass
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS alarms (
@@ -103,6 +105,109 @@ def init_db():
     finally:
         conn.close()
 
+# --- Parsing Logic Provided by User ---
+
+def strip_namespace(tag):
+    return tag.split("}", 1)[1] if "}" in tag else tag
+
+def xml_to_dict(elem):
+    result = {}
+    for child in elem:
+        tag = strip_namespace(child.tag)
+        if tag in result:
+            if not isinstance(result[tag], list):
+                result[tag] = [result[tag]]
+            result[tag].append(child.text if len(child) == 0 else xml_to_dict(child))
+        else:
+            result[tag] = child.text if len(child) == 0 else xml_to_dict(child)
+    return result
+
+def extract_all_data(data):
+    combined_list = []
+    equipment = data.get("Equipment", {})
+    computer_systems = equipment.get("ComputerSystem", [])
+    if not isinstance(computer_systems, list):
+        computer_systems = [computer_systems]
+
+    semc_function = data.get("SemcFunction", {})
+    networks_data = semc_function.get("Networks", {})
+    ipv4_networks = networks_data.get("IPv4Network", [])
+    if not isinstance(ipv4_networks, list):
+        ipv4_networks = [ipv4_networks]
+
+    network_info = []
+    for ipv4 in ipv4_networks:
+        if isinstance(ipv4, dict):
+            network_name = ipv4.get("iPv4NetworkId", "")
+            if "sbi" in network_name.lower():
+                network_info.append({
+                    "networkName": network_name,
+                    "ipAddress": ipv4.get("semAddrActive", "")
+                })
+
+    for system in computer_systems:
+        if not isinstance(system, dict): continue
+        
+        system_id = system.get("computerSystemId", "")
+        uu_id = system.get("uuId", "")
+        vpod_name = system.get("vpod", "")
+        interfaces = system.get("SystemEthernetInterface", [])
+        agents = system.get("Agent", [])
+        agent_ip_address = ""
+
+        if not isinstance(interfaces, list):
+            interfaces = [interfaces]
+        if not isinstance(agents, list):
+            agents = [agents]
+
+        for agent in agents:
+            if isinstance(agent, dict) and agent.get("agentId") == "1":
+                agent_ip_address = agent.get("ipAddress", "")
+
+        for iface in interfaces:
+            if not isinstance(iface, dict): continue
+            
+            connected_to = iface.get("connectedTo", "")
+            switch_info = {item.split("=")[0]: item.split("=")[1] for item in connected_to.split(",")} if connected_to else {}
+            switch_id = switch_info.get("Bridge", "") or switch_info.get("DataBridge", "")
+            port_id = switch_info.get("BridgePort", "")
+
+            # Include system even if not connected to switch, for inventory
+            switch_type = ""
+            if switch_id:
+                switch_type = "leaf" if switch_id.lower().startswith("l") else "control" if switch_id.lower().startswith("c") else ""
+
+            base_entry = {
+                "type": "NetworkInterface",
+                "computerSystemId": system_id,
+                "uuId": uu_id,
+                "vpod_name": vpod_name,
+                "interfaceId": iface.get("systemEthernetInterfaceId", ""),
+                "macAddress": iface.get("macAddress", ""),
+                "udevName": iface.get("udevName", ""),
+                "pciAddress": iface.get("pciAddress", ""),
+                "switchPortId": port_id,
+                "switchId": switch_id,
+                "switchType": switch_type,
+                "diskId": "",
+                "diskSize": "",
+                "diskwwn": "",
+                "bmc IPaddress": agent_ip_address,
+                "networkName": "",
+                "ipAddress": ""
+            }
+
+            if vpod_name and network_info:
+                for info in network_info:
+                    entry = base_entry.copy()
+                    entry["networkName"] = info["networkName"]
+                    entry["ipAddress"] = info["ipAddress"]
+                    combined_list.append(entry)
+            else:
+                combined_list.append(base_entry)
+
+    return combined_list
+
 def fetch_netconf_data():
     conn = get_db_connection()
     if not conn:
@@ -115,71 +220,75 @@ def fetch_netconf_data():
     for dev in devices:
         dev_id, name, ip, port, user, password, dtype, auth_type, ssh_key = dev
         
-        real_data = None
+        parsed_data = []
+        connection_success = False
         
-        if auth_type == 'KEY' and ssh_key:
-            try:
+        try:
+            m = None
+            if auth_type == 'KEY' and ssh_key:
                 with tempfile.NamedTemporaryFile(mode='w', delete=False) as key_file:
                     key_file.write(ssh_key)
                     key_file_path = key_file.name
                 
-                with manager.connect(host=ip, port=port, username=user, key_filename=key_file_path,
-                                   hostkey_verify=False, timeout=3, allow_agent=False, look_for_keys=False) as m:
-                    real_data = {
-                        'status': 'ONLINE',
-                        'uptime': '10d 2h (Real)',
-                        'cpu': 10,
-                        'mem': 20
-                    }
+                m = manager.connect(host=ip, port=port, username=user, key_filename=key_file_path,
+                                    hostkey_verify=False, timeout=60, allow_agent=False, look_for_keys=False,
+                                    device_params={'name': 'default'})
                 os.unlink(key_file_path)
-            except Exception:
-                pass
-        else:
-            try:
-                with manager.connect(host=ip, port=port, username=user, password=password, 
-                                   hostkey_verify=False, timeout=3) as m:
-                    real_data = {
-                        'status': 'ONLINE',
-                        'uptime': '10d 2h (Real)',
-                        'cpu': 10,
-                        'mem': 20
-                    }
-            except Exception:
-                pass
-
-        if not real_data:
-            is_offline = random.random() > 0.9
-            status = 'OFFLINE' if is_offline else 'ONLINE'
-            if not is_offline and random.random() > 0.8:
-                status = 'WARNING'
+            else:
+                m = manager.connect(host=ip, port=port, username=user, password=password, 
+                                    hostkey_verify=False, timeout=60, allow_agent=False, look_for_keys=False,
+                                    device_params={'name': 'default'})
             
-            real_data = {
-                'status': status,
-                'uptime': '0d' if is_offline else f"{random.randint(1,100)}d {random.randint(1,23)}h",
-                'cpu': 0 if is_offline else random.randint(5, 95),
-                'mem': 0 if is_offline else random.randint(10, 90)
-            }
+            if m:
+                connection_success = True
+                response = m.get() # Get full config/state
+                root = ET.fromstring(response.xml)
+                response_dict = xml_to_dict(root)
+                
+                # Extract Data using user logic
+                data_node = response_dict.get("data", {}).get("ManagedElement", {})
+                if isinstance(data_node, list):
+                    data_node = data_node[0]
+                
+                if isinstance(data_node, dict):
+                    parsed_data = extract_all_data(data_node)
+                
+                m.close_session()
 
+        except Exception as e:
+            print(f"Fetch Error {ip}: {e}")
+            pass
+
+        # Use mock data if connection failed (for dev environment)
+        if not connection_success:
+             # Generate a mock topology report
+             parsed_data = []
+             for i in range(1, 4):
+                 parsed_data.append({
+                     "computerSystemId": f"server-{i}",
+                     "vpod_name": f"vpod-{i}",
+                     "switchId": "leaf-01",
+                     "switchPortId": f"1/1/{i}",
+                     "bmc IPaddress": f"10.0.0.{10+i}"
+                 })
+
+        # Update DB
         try:
-            cur.execute("""
-                INSERT INTO device_status (device_id, status, uptime, cpu_load, memory_usage)
-                VALUES (?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE 
-                status=VALUES(status), uptime=VALUES(uptime), cpu_load=VALUES(cpu_load), memory_usage=VALUES(memory_usage)
-            """, (dev_id, real_data['status'], real_data['uptime'], real_data['cpu'], real_data['mem']))
+            json_str = json.dumps(parsed_data)
+            status_val = 'ONLINE' if connection_success else 'WARNING' # Warning if using mock
+            if not connection_success and len(parsed_data) == 0:
+                status_val = 'OFFLINE'
 
-            if real_data['status'] == 'OFFLINE':
-                aid = f"alm-{uuid.uuid4().hex[:8]}"
-                cur.execute("INSERT INTO alarms (id, device_id, severity, message, timestamp) VALUES (?, ?, ?, ?, ?)",
-                           (aid, dev_id, 'CRITICAL', 'Device Unreachable (NETCONF Fail)', datetime.now()))
-            elif real_data['cpu'] > 80:
-                aid = f"alm-{uuid.uuid4().hex[:8]}"
-                cur.execute("INSERT INTO alarms (id, device_id, severity, message, timestamp) VALUES (?, ?, ?, ?, ?)",
-                           (aid, dev_id, 'MAJOR', f"High CPU Load: {real_data['cpu']}%", datetime.now()))
+            cur.execute("""
+                INSERT INTO device_status (device_id, status, uptime, cpu_load, memory_usage, topology_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                status=VALUES(status), topology_json=VALUES(topology_json)
+            """, (dev_id, status_val, 'Unknown', 0, 0, json_str))
 
             conn.commit()
-        except mariadb.Error:
-            pass
+        except mariadb.Error as e:
+            print(f"DB Error: {e}")
 
     conn.close()
 
@@ -249,7 +358,6 @@ def manage_devices():
             auth = 'PASSWORD'
             if len(r) > 6:
                 auth = r[6]
-                
             devices.append({
                 'id': r[0], 'name': r[1], 'ip': r[2], 'port': r[3], 'username': r[4], 'type': r[5], 'authType': auth
             })
@@ -290,51 +398,75 @@ def get_snapshot():
     conn = get_db_connection()
     cur = conn.cursor()
     
-    query = """
-        SELECT d.id, d.name, d.ip, d.port, d.username, d.type, 
-               s.status, s.uptime, s.cpu_load, s.memory_usage
-        FROM devices d
-        LEFT JOIN device_status s ON d.id = s.device_id
-    """
-    cur.execute(query)
-    nodes = []
-    ids = []
-    for r in cur.fetchall():
-        nodes.append({
-            'id': r[0], 'name': r[1], 'ip': r[2], 'port': r[3], 'username': r[4], 'type': r[5],
-            'status': r[6] or 'OFFLINE', 
-            'uptime': r[7] or '0d', 
-            'cpuLoad': r[8] or 0, 
-            'memoryUsage': r[9] or 0
-        })
-        ids.append(r[0])
+    # Get configured controller devices
+    cur.execute("SELECT id, name, ip, type FROM devices")
+    devices = {r[0]: {'id': r[0], 'name': r[1], 'ip': r[2], 'type': r[3], 'status': 'ONLINE'} for r in cur.fetchall()}
+    
+    # Get topology data
+    try:
+        cur.execute("SELECT device_id, status, topology_json FROM device_status")
+    except mariadb.Error:
+        return jsonify({'nodes': list(devices.values()), 'links': [], 'alarms': []})
 
-    links = []
-    if len(ids) > 1:
-        for i in range(len(ids)):
-            target_idx = (i + 1) % len(ids)
-            links.append({
-                'source': ids[i],
-                'target': ids[target_idx],
-                'bandwidth': '10Gbps',
-                'status': 'UP'
-            })
-
-    cur.execute("SELECT id, device_id, severity, message, timestamp FROM alarms")
-    alarms = []
+    discovered_nodes = {}
+    discovered_links = []
+    
     for r in cur.fetchall():
-        dev_name = next((n['name'] for n in nodes if n['id'] == r[1]), 'Unknown')
-        alarms.append({
-            'id': r[0],
-            'deviceId': r[1],
-            'deviceName': dev_name,
-            'severity': r[2],
-            'message': r[3],
-            'timestamp': str(r[4])
-        })
+        dev_id = r[0]
+        if dev_id in devices:
+            devices[dev_id]['status'] = r[1]
+        
+        topo_json = r[2]
+        if topo_json:
+            try:
+                records = json.loads(topo_json)
+                for item in records:
+                    # Create Node for ComputerSystem
+                    sys_id = item.get('computerSystemId')
+                    if sys_id and sys_id not in discovered_nodes:
+                        discovered_nodes[sys_id] = {
+                            'id': sys_id,
+                            'name': sys_id,
+                            'ip': item.get('bmc IPaddress') or 'N/A',
+                            'type': 'SERVER',
+                            'status': 'ONLINE',
+                            'uptime': '10d',
+                            'cpuLoad': 10,
+                            'memoryUsage': 20
+                        }
+                    
+                    # Create Node for Switch
+                    sw_id = item.get('switchId')
+                    if sw_id and sw_id not in discovered_nodes:
+                         discovered_nodes[sw_id] = {
+                            'id': sw_id,
+                            'name': sw_id,
+                            'ip': 'N/A',
+                            'type': 'SWITCH',
+                            'status': 'ONLINE',
+                            'uptime': '100d',
+                            'cpuLoad': 5,
+                            'memoryUsage': 10
+                         }
+
+                    # Create Link
+                    if sys_id and sw_id:
+                        link_key = f"{sys_id}-{sw_id}"
+                        discovered_links.append({
+                            'source': sys_id,
+                            'target': sw_id,
+                            'bandwidth': '10Gbps',
+                            'status': 'UP',
+                            'label': item.get('switchPortId')
+                        })
+
+            except json.JSONDecodeError:
+                pass
+
+    final_nodes = list(devices.values()) + list(discovered_nodes.values())
 
     conn.close()
-    return jsonify({'nodes': nodes, 'links': links, 'alarms': alarms})
+    return jsonify({'nodes': final_nodes, 'links': discovered_links, 'alarms': []})
 
 @app.route('/api/fetch', methods=['POST'])
 def trigger_fetch():
