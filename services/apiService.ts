@@ -1,6 +1,8 @@
 import { Device, Link, Alarm, NetconfDeviceConfig } from '../types';
 
-const API_URL = 'http://localhost:5000/api';
+// Dynamically determine the backend URL.
+// If the app is accessed via 10.33.4.36, it uses http://10.33.4.36:5000/api
+const API_URL = `${window.location.protocol}//${window.location.hostname}:5000/api`;
 
 export const api = {
   // Get full dashboard snapshot (nodes, links, alarms)
@@ -52,7 +54,7 @@ export const api = {
 
   // --- Auth & User ---
   
-  login: async (username: string, password: string): Promise<boolean> => {
+  login: async (username: string, password: string): Promise<{success: boolean, error?: string}> => {
     try {
         const res = await fetch(`${API_URL}/login`, {
             method: 'POST',
@@ -60,11 +62,11 @@ export const api = {
             body: JSON.stringify({ username, password })
         });
         if (res.ok) {
-            return true;
+            return { success: true };
         }
-        return false;
+        return { success: false, error: 'Invalid username or password' };
     } catch (e) {
-        return false;
+        return { success: false, error: 'Connection Error: Backend unreachable' };
     }
   },
 

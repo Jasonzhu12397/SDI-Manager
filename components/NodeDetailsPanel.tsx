@@ -1,6 +1,6 @@
 import React from 'react';
-import { X, Server, Activity, Clock, Cpu, HardDrive, Network } from 'lucide-react';
-import { Device, Link, DeviceType } from '../types';
+import { X, Server, Activity, Clock, Cpu, Network } from 'lucide-react';
+import { Device, Link } from '../types';
 
 interface NodeDetailsPanelProps {
   device: Device | null;
@@ -71,7 +71,7 @@ const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({ device, links, onCl
                     <span className="text-slate-200 text-sm">{device.type}</span>
                 </div>
                 <div className="flex justify-between p-3 border-b border-slate-700/50">
-                    <span className="text-slate-400 text-sm">SSH Port</span>
+                    <span className="text-slate-400 text-sm">NETCONF Port</span>
                     <span className="text-slate-200 text-sm font-mono">{device.port}</span>
                 </div>
                 <div className="flex justify-between p-3 border-b border-slate-700/50">
@@ -103,7 +103,6 @@ const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({ device, links, onCl
                     connections.map((link, idx) => {
                         const isSource = link.source === device.id;
                         const neighborId = isSource ? link.target : link.source;
-                        // Determine generic neighbor name if not available in main list (for links to outside)
                         
                         return (
                             <div key={idx} className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex flex-col gap-2">
