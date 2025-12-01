@@ -23,6 +23,38 @@ DB_CONFIG = {
     'port': 3306
 }
 
+# NETCONF Filter to get essential data
+NETCONF_FILTER = """
+<filter>
+  <ManagedElement>
+    <managedElementId>1</managedElementId>
+    <Equipment>
+      <ComputerSystem>
+        <uuId/>
+        <computerSystemId/>
+        <SystemEthernetInterface/>
+        <InBandInventory>
+             <Disk/>
+        </InBandInventory>
+        <Agent/>
+      </ComputerSystem>
+      <Switch/>
+      <RedfishAsset>
+        <ipAddress/>
+      </RedfishAsset>
+    </Equipment>
+    <SemcFunction>
+      <Trm>
+        <BridgePort/>
+      </Trm>
+      <Networks>
+        <IPv4Network/>
+      </Networks>
+    </SemcFunction>
+  </ManagedElement>
+</filter>
+"""
+
 def get_db_connection():
     try:
         conn = mariadb.connect(**DB_CONFIG)
@@ -144,6 +176,11 @@ def extract_all_data(data):
     if not isinstance(switches, list):
         switches = [switches]
     
+    trm = data.get("SemcFunction", {}).get("Trm", {})
+    bridge_ports = trm.get("BridgePort", [])
+    if not isinstance(bridge_ports, list):
+        bridge_ports = [bridge_ports]
+
     for sw in switches:
         sw_id = ""
         if isinstance(sw, str):
@@ -152,11 +189,33 @@ def extract_all_data(data):
             sw_id = sw.get("switchId") or sw.get("id") or sw.get("name")
         
         if sw_id:
+             # Process Ports
+             my_ports = []
+             for bp in bridge_ports:
+                 if isinstance(bp, dict):
+                     bp_id = bp.get("bridgePortId", "")
+                     # If we can't link ports to switch, we add all to the first switch or use heuristic
+                     # For now, we just add if it looks valid
+                     if bp_id:
+                         my_ports.append({
+                             "id": bp_id,
+                             "status": bp.get("operState", "UNKNOWN"),
+                             "speed": bp.get("linkSpeed", "10Gbps"),
+                             "connectedDevice": "Unknown"
+                         })
+             
+             # Fallback port
+             if not my_ports:
+                 my_ports.append({"id": "mgmt", "status": "UP", "speed": "1000Mbps"})
+
              combined_list.append({
                  "category": "NETWORK",
                  "id": sw_id,
                  "type": "SWITCH",
-                 "status": "ONLINE"
+                 "status": "ONLINE",
+                 "details": {
+                     "ports": my_ports
+                 }
              })
 
     # --- 2. COMPUTE NODES (ComputerSystem) ---
@@ -165,6 +224,21 @@ def extract_all_data(data):
         computer_systems = [computer_systems]
 
     for system in computer_systems:
+        system_id = ""
+        # HANDLE STRING CASE: If system is just an ID string (from simple XML list)
+        if isinstance(system, str):
+            system_id = system
+            combined_list.append({
+                "category": "COMPUTE",
+                "type": "SERVER",
+                "id": system_id,
+                "name": system_id,
+                "status": "ONLINE",
+                "details": { "disks": [], "interfaces": [] }
+            })
+            continue
+
+        # Handle Dict case (Detailed XML)
         if not isinstance(system, dict): continue
         
         system_id = system.get("computerSystemId", "")
@@ -182,21 +256,21 @@ def extract_all_data(data):
             if isinstance(agent, dict) and agent.get("agentId") == "1":
                 agent_ip_address = agent.get("ipAddress", "")
         
-        # Base Node Object
-        base_node = {
-            "category": "COMPUTE",
-            "type": "SERVER",
-            "id": system_id,
-            "computerSystemId": system_id,
-            "uuId": uu_id,
-            "vpod_name": vpod_name,
-            "bmc IPaddress": agent_ip_address,
-        }
-        
-        if not interfaces:
-             combined_list.append(base_node)
+        # Extract Disks
+        disks = []
+        in_band = system.get("InBandInventory", {})
+        raw_disks = in_band.get("Disk", [])
+        if not isinstance(raw_disks, list): raw_disks = [raw_disks]
+        for d in raw_disks:
+            if isinstance(d, dict):
+                disks.append({
+                    "id": d.get("diskId", "unknown"),
+                    "size": d.get("capacity", "unknown"),
+                    "status": "OK"
+                })
 
-        # Parse Links
+        # Extract Interfaces
+        parsed_interfaces = []
         for iface in interfaces:
             if not isinstance(iface, dict): continue
             
@@ -205,7 +279,6 @@ def extract_all_data(data):
             port_id = ""
 
             if connected_to:
-                # Parse 'Bridge=X,BridgePort=Y' string
                 parts = connected_to.split(",")
                 for part in parts:
                     if "=" in part:
@@ -214,6 +287,13 @@ def extract_all_data(data):
                             switch_id = val
                         elif key == "BridgePort":
                             port_id = val
+
+            parsed_interfaces.append({
+                "id": iface.get("systemEthernetInterfaceId", ""),
+                "mac": iface.get("macAddress", ""),
+                "connectedSwitch": switch_id,
+                "connectedPort": port_id
+            })
 
             if switch_id:
                 combined_list.append({
@@ -224,10 +304,20 @@ def extract_all_data(data):
                     "target_port": port_id,
                     "status": "UP"
                 })
-            
-            # Ensure node is added
-            if base_node not in combined_list:
-                combined_list.append(base_node)
+
+        combined_list.append({
+            "category": "COMPUTE",
+            "type": "SERVER",
+            "id": system_id,
+            "computerSystemId": system_id,
+            "uuId": uu_id,
+            "vpod_name": vpod_name,
+            "bmc IPaddress": agent_ip_address,
+            "details": {
+                "disks": disks,
+                "interfaces": parsed_interfaces
+            }
+        })
 
     return combined_list
 
@@ -273,16 +363,28 @@ def fetch_netconf_data():
             
             if m:
                 connection_success = True
-                response = m.get() 
-                root = ET.fromstring(response.xml)
-                response_dict = xml_to_dict(root)
-                
-                data_node = response_dict.get("data", {}).get("ManagedElement", {})
-                if isinstance(data_node, list) and len(data_node) > 0:
-                    data_node = data_node[0]
-                
-                if isinstance(data_node, dict):
-                    parsed_data = extract_all_data(data_node)
+                # Try filtered first, then full if failed or empty
+                try:
+                    response = m.get(filter=NETCONF_FILTER) 
+                    root = ET.fromstring(response.xml)
+                    response_dict = xml_to_dict(root)
+                    
+                    data_node = response_dict.get("data", {}).get("ManagedElement", {})
+                    if isinstance(data_node, list) and len(data_node) > 0:
+                        data_node = data_node[0]
+                    
+                    if isinstance(data_node, dict):
+                        parsed_data = extract_all_data(data_node)
+                except Exception:
+                    # Fallback to full get if filter fails
+                    response = m.get() 
+                    root = ET.fromstring(response.xml)
+                    response_dict = xml_to_dict(root)
+                    data_node = response_dict.get("data", {}).get("ManagedElement", {})
+                    if isinstance(data_node, list) and len(data_node) > 0:
+                        data_node = data_node[0]
+                    if isinstance(data_node, dict):
+                        parsed_data = extract_all_data(data_node)
                 
                 m.close_session()
 
@@ -291,31 +393,19 @@ def fetch_netconf_data():
             pass
 
         if not connection_success:
-             # Mock Data for demonstration if connection fails
              parsed_data = []
+             # Mock
              for i in range(1, 4):
                  parsed_data.append({
                      "category": "COMPUTE",
                      "id": f"worker-node-{i}",
-                     "computerSystemId": f"worker-node-{i}",
                      "type": "SERVER",
                      "bmc IPaddress": f"10.0.0.{100+i}",
+                     "details": {
+                         "disks": [{"id": "sda", "size": "500G", "status": "OK"}],
+                         "interfaces": [{"id": "eth0", "mac": "00:11:22:33:44:55", "connectedSwitch": "sw-01", "connectedPort": "1/1/1"}]
+                     }
                  })
-                 parsed_data.append({
-                    "category": "LINK",
-                    "source": f"worker-node-{i}",
-                    "target": "Core-Switch-01",
-                    "source_interface": f"eth{i}",
-                    "target_port": f"1/1/{i}",
-                    "status": "UP"
-                 })
-             
-             parsed_data.append({
-                 "category": "NETWORK",
-                 "id": "Core-Switch-01",
-                 "type": "SWITCH",
-                 "status": "ONLINE"
-             })
 
         try:
             json_str = json.dumps(parsed_data)
@@ -340,8 +430,6 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(fetch_netconf_data, 'cron', hour=0, minute=0)
 scheduler.start()
 
-# --- Routes ---
-
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
@@ -351,9 +439,7 @@ def login():
     cur.execute("SELECT password FROM users WHERE username = ?", (data['username'],))
     row = cur.fetchone()
     conn.close()
-    
-    if row and row[0] == data['password']:
-        return jsonify({'success': True})
+    if row and row[0] == data['password']: return jsonify({'success': True})
     return jsonify({'success': False}), 401
 
 @app.route('/api/register', methods=['POST'])
@@ -379,7 +465,6 @@ def change_password():
     cur = conn.cursor()
     cur.execute("SELECT password FROM users WHERE username = ?", (data['username'],))
     row = cur.fetchone()
-    
     if row and row[0] == data['oldPassword']:
         cur.execute("UPDATE users SET password = ? WHERE username = ?", (data['newPassword'], data['username']))
         conn.commit()
@@ -461,32 +546,19 @@ def get_snapshot():
                 for item in records:
                     category = item.get('category')
                     
-                    if category == 'COMPUTE':
+                    if category == 'COMPUTE' or category == 'NETWORK':
                         node_id = item.get('id')
                         if node_id:
                             discovered_nodes[node_id] = {
                                 'id': node_id,
                                 'name': node_id,
                                 'ip': item.get('bmc IPaddress') or 'N/A',
-                                'type': 'SERVER',
-                                'status': 'ONLINE',
+                                'type': item.get('type', 'SERVER'),
+                                'status': item.get('status', 'ONLINE'),
                                 'uptime': '10d',
                                 'cpuLoad': 10,
-                                'memoryUsage': 20
-                            }
-                    
-                    elif category == 'NETWORK':
-                        node_id = item.get('id')
-                        if node_id:
-                            discovered_nodes[node_id] = {
-                                'id': node_id,
-                                'name': node_id,
-                                'ip': 'N/A',
-                                'type': 'SWITCH',
-                                'status': 'ONLINE',
-                                'uptime': '100d',
-                                'cpuLoad': 5,
-                                'memoryUsage': 10
+                                'memoryUsage': 20,
+                                'details': item.get('details')
                             }
 
                     elif category == 'LINK':
