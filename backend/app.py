@@ -159,22 +159,7 @@ def extract_all_data(data):
                  "status": "ONLINE"
              })
 
-    # --- 2. SWITCH-SWITCH CONNECTIONS (Cables) ---
-    # Attempt to parse cables if available for Switch-Switch links
-    cables = equipment.get("Cable", [])
-    if not isinstance(cables, list):
-        cables = [cables]
-    
-    for cable in cables:
-        # Heuristic parsing for Cable XML if it exists
-        # Assuming generic structure for future proofing
-        if isinstance(cable, dict):
-            c_id = cable.get("id") or cable.get("cableId")
-            # This is speculative based on common schemas, as exact XML wasn't provided
-            # Logic: If we find endpoints, we create a link
-            pass 
-
-    # --- 3. COMPUTE NODES (ComputerSystem) ---
+    # --- 2. COMPUTE NODES (ComputerSystem) ---
     computer_systems = equipment.get("ComputerSystem", [])
     if not isinstance(computer_systems, list):
         computer_systems = [computer_systems]
@@ -312,10 +297,9 @@ def fetch_netconf_data():
             print(f"Fetch Error {ip}: {e}")
             pass
 
-        # Mock Data Generation if failed
+        # Mock Data if failed (for testing)
         if not connection_success:
              parsed_data = []
-             # Mock Compute
              for i in range(1, 4):
                  parsed_data.append({
                      "category": "COMPUTE",
@@ -324,7 +308,6 @@ def fetch_netconf_data():
                      "type": "SERVER",
                      "bmc IPaddress": f"10.0.0.{100+i}",
                  })
-                 # Mock Link to Switch
                  parsed_data.append({
                     "category": "LINK",
                     "source": f"worker-node-{i}",
@@ -334,7 +317,6 @@ def fetch_netconf_data():
                     "status": "UP"
                  })
              
-             # Mock Network
              parsed_data.append({
                  "category": "NETWORK",
                  "id": "Core-Switch-01",
@@ -365,7 +347,7 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(fetch_netconf_data, 'cron', hour=0, minute=0)
 scheduler.start()
 
-# ... API Routes remain similar but rely on the new JSON structure ...
+# --- Routes ---
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -519,7 +501,7 @@ def get_snapshot():
                             # Avoid duplicates
                             is_dup = False
                             for l in discovered_links:
-                                if l['source'] === src and l['target'] === tgt:
+                                if l['source'] == src and l['target'] == tgt:
                                     is_dup = True
                                     break
                             
