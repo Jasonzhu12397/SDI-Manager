@@ -61,17 +61,17 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh, 
     svg.call(zoomBehavior);
 
     const simulation = forceSimulation(safeNodes as SimulationNodeDatum[])
-      .force("link", forceLink(safeLinks).id((d: any) => d.id).distance(250)) 
-      .force("charge", forceManyBody().strength(-1000))
+      .force("link", forceLink(safeLinks).id((d: any) => d.id).distance(200)) 
+      .force("charge", forceManyBody().strength(-800))
       .force("center", forceCenter(width / 2, height / 2))
-      .force("collide", forceCollide().radius(70));
+      .force("collide", forceCollide().radius(80));
 
     // Links
     const linkGroup = g.append("g").attr("class", "links");
     const link = linkGroup.selectAll("line")
       .data(safeLinks)
       .join("line")
-      .attr("stroke-width", (d) => Math.sqrt(parseInt(d.bandwidth || '1')) * 2)
+      .attr("stroke-width", 2)
       .attr("stroke", (d: any) => d.status === 'DOWN' ? '#ef4444' : '#475569')
       .attr("stroke-opacity", 0.6);
 
@@ -85,25 +85,29 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh, 
         .attr("rx", 4)
         .attr("ry", 4)
         .attr("fill", "#0f172a") 
-        .attr("fill-opacity", 0.8)
+        .attr("fill-opacity", 0.9)
         .attr("stroke", "#334155")
         .attr("stroke-width", 1);
 
     const labelText = linkLabel.append("text")
       .text((d: any) => d.label || '')
-      .attr("font-size", "11px")
-      .attr("fill", "#cbd5e1")
+      .attr("font-size", "10px")
+      .attr("fill", "#e2e8f0")
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "central")
       .attr("font-family", "monospace");
       
     linkLabel.each(function(d: any) {
-        const textWidth = d.label ? d.label.length * 7 : 0;
-        select(this).select("rect")
-            .attr("width", textWidth + 10)
-            .attr("height", 18)
-            .attr("x", -(textWidth + 10) / 2)
-            .attr("y", -9);
+        if (d.label) {
+            const textWidth = d.label.length * 6.5;
+            select(this).select("rect")
+                .attr("width", textWidth + 12)
+                .attr("height", 20)
+                .attr("x", -(textWidth + 12) / 2)
+                .attr("y", -10);
+        } else {
+             select(this).select("rect").attr("opacity", 0);
+        }
     });
 
     // Nodes
@@ -118,19 +122,41 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh, 
           if (onNodeClick) onNodeClick(d);
       });
 
+    // Hover effect circle
     node.append("circle")
-        .attr("r", 35)
+        .attr("r", 40)
         .attr("fill", (d: any) => getStatusColor(d.status))
         .attr("fill-opacity", 0)
         .attr("class", "hover-glow")
         .transition().duration(200);
 
-    node.append("circle")
-      .attr("r", 28)
-      .attr("fill", "#1e293b") 
-      .attr("stroke", (d: any) => getStatusColor(d.status))
-      .attr("stroke-width", 3);
+    // Main Node Shape
+    node.each(function(d: any) {
+        const el = select(this);
+        const color = getStatusColor(d.status);
+        
+        if (d.type === DeviceType.SERVER) {
+            // Square for Compute/Server
+            el.append("rect")
+              .attr("width", 50)
+              .attr("height", 50)
+              .attr("x", -25)
+              .attr("y", -25)
+              .attr("rx", 8)
+              .attr("fill", "#1e293b")
+              .attr("stroke", color)
+              .attr("stroke-width", 3);
+        } else {
+            // Circle for Network (Switch/Router)
+            el.append("circle")
+              .attr("r", 30)
+              .attr("fill", "#1e293b") 
+              .attr("stroke", color)
+              .attr("stroke-width", 3);
+        }
+    });
 
+    // Icon / Text inside node
     node.append("text")
       .attr("dy", 5)
       .attr("text-anchor", "middle")
@@ -139,29 +165,29 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh, 
       .style("font-size", "12px")
       .style("font-weight", "bold")
       .text((d: any) => {
-          if (d.type === DeviceType.ROUTER) return 'R';
+          if (d.type === DeviceType.SERVER) return 'SRV';
           if (d.type === DeviceType.SWITCH) return 'SW';
-          if (d.type === DeviceType.FIREWALL) return 'FW';
-          return 'S';
+          if (d.type === DeviceType.ROUTER) return 'RTR';
+          return 'DEV';
       });
 
+    // Name Label
     node.append("text")
       .attr("dx", 0)
-      .attr("dy", 45)
+      .attr("dy", 50)
       .text((d: any) => d.name)
       .attr("text-anchor", "middle")
-      .attr("fill", "#e2e8f0")
-      .style("font-size", "12px")
-      .style("font-weight", "600")
+      .attr("fill", "#cbd5e1")
+      .style("font-size", "11px")
+      .style("font-weight", "500")
       .style("pointer-events", "none")
       .style("text-shadow", "0 2px 4px rgba(0,0,0,0.8)");
 
+    // Interactions
     node.on("mouseenter", function() {
         select(this).select(".hover-glow").attr("fill-opacity", 0.3);
-        select(this).select("circle").attr("stroke", "#fff");
     }).on("mouseleave", function(event, d: any) {
         select(this).select(".hover-glow").attr("fill-opacity", 0);
-        select(this).select("circle").attr("stroke", getStatusColor(d.status));
     });
 
     simulation.on("tick", () => {

@@ -1,6 +1,7 @@
 import { Device, Link, Alarm, NetconfDeviceConfig } from '../types';
 
-// Dynamic API URL: Uses the current browser hostname (e.g., 10.33.4.36) but port 5000
+// Dynamically determine the backend URL.
+// If the app is accessed via 10.33.4.36, it uses http://10.33.4.36:5000/api
 const API_URL = `${window.location.protocol}//${window.location.hostname}:5000/api`;
 
 export const api = {
@@ -63,9 +64,9 @@ export const api = {
         if (res.ok) {
             return { success: true };
         }
-        return { success: false, error: 'Invalid credentials' };
+        return { success: false, error: 'Invalid username or password' };
     } catch (e) {
-        return { success: false, error: 'Cannot connect to server (Network Error)' };
+        return { success: false, error: 'Connection Error: Backend unreachable' };
     }
   },
 
