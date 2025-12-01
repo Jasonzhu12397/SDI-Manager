@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X } from 'lucide-react';
 import Dashboard from './components/Dashboard';
@@ -7,6 +6,7 @@ import AlarmTable from './components/AlarmTable';
 import ConfigCompare from './components/ConfigCompare';
 import Login from './components/Login';
 import DeviceManager from './components/DeviceManager';
+import NodeDetailsPanel from './components/NodeDetailsPanel';
 import { api } from './services/apiService';
 import { Device, Link, Alarm } from './types';
 
@@ -24,6 +24,9 @@ const App: React.FC = () => {
   const [links, setLinks] = useState<Link[]>([]);
   const [alarms, setAlarms] = useState<Alarm[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Interaction State
+  const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
 
   // Modal State
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -101,6 +104,10 @@ const App: React.FC = () => {
 
   const handleNavigate = (tab: 'dashboard' | 'topology' | 'alarms' | 'config' | 'devices') => {
     setActiveTab(tab);
+  };
+
+  const handleNodeClick = (device: Device) => {
+    setSelectedDevice(device);
   };
 
   if (!isAuthenticated) {
@@ -221,7 +228,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Viewport */}
-        <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
+        <div className="flex-1 overflow-y-auto p-6 scroll-smooth relative">
           {activeTab === 'dashboard' && (
             <Dashboard 
               devices={devices} 
@@ -232,11 +239,25 @@ const App: React.FC = () => {
           {activeTab === 'devices' && (
             <DeviceManager />
           )}
-          {activeTab === 'topology' && <TopologyGraph nodes={devices} links={links} onRefresh={fetchData} />}
+          {activeTab === 'topology' && (
+            <TopologyGraph 
+                nodes={devices} 
+                links={links} 
+                onRefresh={fetchData} 
+                onNodeClick={handleNodeClick}
+            />
+          )}
           {activeTab === 'alarms' && <AlarmTable alarms={alarms} onClearAlarm={handleClearAlarm} />}
           {activeTab === 'config' && <ConfigCompare />}
         </div>
         
+        {/* Node Details Slide-over */}
+        <NodeDetailsPanel 
+            device={selectedDevice} 
+            links={links} 
+            onClose={() => setSelectedDevice(null)} 
+        />
+
         {/* Change Password Modal */}
         {showPasswordModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
