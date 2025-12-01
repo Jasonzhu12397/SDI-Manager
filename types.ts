@@ -28,38 +28,11 @@ export interface NetconfDeviceConfig {
   type: DeviceType;
 }
 
-export interface DiskInfo {
-  id: string;
-  size: string;
-  status: string;
-}
-
-export interface InterfaceInfo {
-  id: string;
-  mac: string;
-  connectedSwitch?: string;
-  connectedPort?: string;
-}
-
-export interface SwitchPortInfo {
-  id: string;
-  status: string;
-  speed: string;
-  connectedDevice?: string;
-}
-
-export interface DeviceDetails {
-  disks?: DiskInfo[];
-  interfaces?: InterfaceInfo[];
-  ports?: SwitchPortInfo[];
-}
-
 export interface Device extends NetconfDeviceConfig {
   status: DeviceStatus;
   uptime: string;
   cpuLoad: number;
   memoryUsage: number;
-  details?: DeviceDetails;
 }
 
 export interface Link {
