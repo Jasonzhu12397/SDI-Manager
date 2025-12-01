@@ -1,9 +1,6 @@
 import { Device, Link, Alarm, NetconfDeviceConfig } from '../types';
 
-// Dynamically determine the backend URL.
-// If the app is accessed via localhost, it uses localhost:5000.
-// If accessed via IP (e.g., 10.33.4.36), it uses 10.33.4.36:5000.
-const API_URL = `${window.location.protocol}//${window.location.hostname}:5000/api`;
+const API_URL = 'http://localhost:5000/api';
 
 export const api = {
   // Get full dashboard snapshot (nodes, links, alarms)

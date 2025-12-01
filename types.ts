@@ -1,3 +1,4 @@
+
 export enum DeviceType {
   ROUTER = 'ROUTER',
   SWITCH = 'SWITCH',
@@ -40,6 +41,7 @@ export interface Link {
   target: string;
   bandwidth: string;
   status: 'UP' | 'DOWN';
+  label?: string;
 }
 
 export enum AlarmSeverity {

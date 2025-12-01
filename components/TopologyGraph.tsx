@@ -1,4 +1,3 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import {
   select,
@@ -13,15 +12,16 @@ import {
   Simulation
 } from 'd3';
 import { Device, Link, DeviceStatus, DeviceType } from '../types';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Plus, Minus, Maximize } from 'lucide-react';
 
 interface TopologyGraphProps {
   nodes: Device[];
   links: Link[];
   onRefresh: () => void;
+  onNodeClick?: (device: Device) => void;
 }
 
-const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }) => {
+const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh, onNodeClick }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -37,7 +37,11 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
   };
 
   useEffect(() => {
-    if (!svgRef.current || !wrapperRef.current || nodes.length === 0) return;
+    if (!svgRef.current || !wrapperRef.current) return;
+    
+    // Safety check for empty data to prevent D3 errors
+    const safeNodes = nodes.map(n => ({...n})); 
+    const safeLinks = links.map(l => ({...l})); 
 
     const width = wrapperRef.current.clientWidth;
     const height = wrapperRef.current.clientHeight;
@@ -47,10 +51,12 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
 
     const svg = select(svgRef.current)
       .attr("viewBox", `0 0 ${width} ${height}`)
-      .attr("style", "max-width: 100%; height: auto;");
+      .style("width", "100%")
+      .style("height", "100%");
 
-    // Add zoom behavior
+    // Container group for zooming
     const g = svg.append("g");
+
     const zoomBehavior = d3Zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
       .on("zoom", (event) => {
@@ -61,78 +67,124 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
     svg.call(zoomBehavior);
 
     // Simulation Setup
-    const simulation = forceSimulation(nodes as SimulationNodeDatum[])
-      .force("link", forceLink(links).id((d: any) => d.id).distance(200)) // Increased distance for labels
-      .force("charge", forceManyBody().strength(-800))
+    const simulation = forceSimulation(safeNodes as SimulationNodeDatum[])
+      .force("link", forceLink(safeLinks).id((d: any) => d.id).distance(250)) // More distance for labels
+      .force("charge", forceManyBody().strength(-1000))
       .force("center", forceCenter(width / 2, height / 2))
-      .force("collide", forceCollide().radius(60));
+      .force("collide", forceCollide().radius(70));
 
-    // Draw Links (Lines)
-    const link = g.append("g")
-      .attr("stroke", "#475569") // slate-600
-      .attr("stroke-opacity", 0.6)
-      .selectAll("line")
-      .data(links)
-      .join("line")
-      .attr("stroke-width", (d) => Math.sqrt(parseInt(d.bandwidth || '1')))
-      .attr("stroke", (d: any) => d.status === 'DOWN' ? '#ef4444' : '#475569');
-
-    // Draw Link Labels (Ports)
-    const linkLabel = g.append("g")
-      .attr("class", "link-labels")
-      .selectAll("text")
-      .data(links)
-      .join("text")
-      .text((d: any) => d.label || '')
-      .attr("font-size", "10px")
-      .attr("fill", "#94a3b8") // slate-400
-      .attr("text-anchor", "middle")
-      .attr("font-family", "monospace")
-      .style("background-color", "#000"); // Note: SVG text doesn't support bg-color directly without rect, using text-shadow for visibility
+    // --- Draw Links ---
+    const linkGroup = g.append("g").attr("class", "links");
     
-    // Add text shadow for legibility over lines
-    linkLabel.style("text-shadow", "0px 0px 3px #0f172a");
+    const link = linkGroup
+      .selectAll("line")
+      .data(safeLinks)
+      .join("line")
+      .attr("stroke-width", (d) => Math.sqrt(parseInt(d.bandwidth || '1')) * 2)
+      .attr("stroke", (d: any) => d.status === 'DOWN' ? '#ef4444' : '#475569')
+      .attr("stroke-opacity", 0.6);
 
-    // Draw Nodes
-    const node = g.append("g")
-      .attr("stroke", "#fff")
-      .attr("stroke-width", 1.5)
+    // --- Draw Link Labels (Ports) ---
+    // We use a group for each label to contain the text and a background rect
+    const labelGroup = g.append("g").attr("class", "labels");
+    
+    const linkLabel = labelGroup
       .selectAll("g")
-      .data(nodes)
-      .join("g")
-      .call(drag(simulation) as any);
+      .data(safeLinks)
+      .join("g");
 
-    // Node Background Circle
+    // White/Dark background for text to make it readable over lines
+    linkLabel.append("rect")
+        .attr("rx", 4)
+        .attr("ry", 4)
+        .attr("fill", "#0f172a") // Dark background matching theme
+        .attr("fill-opacity", 0.8)
+        .attr("stroke", "#334155")
+        .attr("stroke-width", 1);
+
+    const labelText = linkLabel.append("text")
+      .text((d: any) => d.label || '')
+      .attr("font-size", "11px")
+      .attr("fill", "#cbd5e1") // slate-300
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "central")
+      .attr("font-family", "monospace");
+      
+    // Resize rect based on text size (approximate)
+    linkLabel.each(function(d: any) {
+        const textWidth = d.label ? d.label.length * 7 : 0;
+        select(this).select("rect")
+            .attr("width", textWidth + 10)
+            .attr("height", 18)
+            .attr("x", -(textWidth + 10) / 2)
+            .attr("y", -9);
+    });
+
+    // --- Draw Nodes ---
+    const nodeGroup = g.append("g").attr("class", "nodes");
+    
+    const node = nodeGroup
+      .selectAll("g")
+      .data(safeNodes)
+      .join("g")
+      .attr("cursor", "pointer")
+      .call(drag(simulation) as any)
+      .on("click", (event, d: any) => {
+          // Stop propagation to prevent map drag/click issues
+          event.stopPropagation();
+          if (onNodeClick) onNodeClick(d);
+      });
+
+    // Node Glow effect for Hover (Initial invisible)
     node.append("circle")
-      .attr("r", 25)
+        .attr("r", 35)
+        .attr("fill", (d: any) => getStatusColor(d.status))
+        .attr("fill-opacity", 0)
+        .attr("class", "hover-glow")
+        .transition().duration(200);
+
+    // Node Main Circle
+    node.append("circle")
+      .attr("r", 28)
       .attr("fill", "#1e293b") // slate-800
       .attr("stroke", (d: any) => getStatusColor(d.status))
       .attr("stroke-width", 3);
 
-    // Node Name Label
-    node.append("text")
-      .attr("dx", 0)
-      .attr("dy", 40)
-      .text((d: any) => d.name)
-      .attr("text-anchor", "middle")
-      .attr("fill", "#e2e8f0")
-      .style("font-size", "11px")
-      .style("font-weight", "bold")
-      .style("pointer-events", "none")
-      .attr("stroke", "none");
-    
-    // Node Type/Icon
+    // Icon / Type Text
     node.append("text")
       .attr("dy", 5)
       .attr("text-anchor", "middle")
       .attr("stroke", "none")
-      .attr("fill", "#94a3b8")
-      .style("font-size", "10px")
-      .text((d: any) => d.type === DeviceType.ROUTER ? 'R' : d.type === DeviceType.SWITCH ? 'SW' : d.type === DeviceType.FIREWALL ? 'FW' : 'S');
+      .attr("fill", "#fff")
+      .style("font-size", "12px")
+      .style("font-weight", "bold")
+      .text((d: any) => {
+          if (d.type === DeviceType.ROUTER) return 'R';
+          if (d.type === DeviceType.SWITCH) return 'SW';
+          if (d.type === DeviceType.FIREWALL) return 'FW';
+          return 'S';
+      });
 
-    // Tooltip behavior (simple title for now)
-    node.append("title")
-      .text((d: any) => `ID: ${d.id}\nIP: ${d.ip}\nStatus: ${d.status}\nLoad: ${d.cpuLoad}%`);
+    // Node Name Label
+    node.append("text")
+      .attr("dx", 0)
+      .attr("dy", 45)
+      .text((d: any) => d.name)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#e2e8f0")
+      .style("font-size", "12px")
+      .style("font-weight", "600")
+      .style("pointer-events", "none")
+      .style("text-shadow", "0 2px 4px rgba(0,0,0,0.8)");
+
+    // Hover Events
+    node.on("mouseenter", function() {
+        select(this).select(".hover-glow").attr("fill-opacity", 0.3);
+        select(this).select("circle").attr("stroke", "#fff");
+    }).on("mouseleave", function(event, d: any) {
+        select(this).select(".hover-glow").attr("fill-opacity", 0);
+        select(this).select("circle").attr("stroke", getStatusColor(d.status));
+    });
 
     simulation.on("tick", () => {
       link
@@ -142,18 +194,20 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
         .attr("y2", (d: any) => d.target.y);
       
       linkLabel
-        .attr("x", (d: any) => (d.source.x + d.target.x) / 2)
-        .attr("y", (d: any) => (d.source.y + d.target.y) / 2);
+        .attr("transform", (d: any) => {
+            const x = (d.source.x + d.target.x) / 2;
+            const y = (d.source.y + d.target.y) / 2;
+            return `translate(${x},${y})`;
+        });
 
       node
         .attr("transform", (d: any) => `translate(${d.x},${d.y})`);
     });
 
-    // Cleanup
     return () => {
       simulation.stop();
     };
-  }, [nodes, links]);
+  }, [nodes, links, onNodeClick]);
 
   // Drag utility
   const drag = (simulation: Simulation<SimulationNodeDatum, undefined>) => {
@@ -181,22 +235,24 @@ const TopologyGraph: React.FC<TopologyGraphProps> = ({ nodes, links, onRefresh }
   }
 
   return (
-    <div className="relative w-full h-[600px] bg-slate-900 rounded-xl border border-slate-700 overflow-hidden shadow-inner" ref={wrapperRef}>
-      <svg ref={svgRef} className="w-full h-full cursor-move"></svg>
+    <div className="relative w-full h-[700px] bg-slate-900 rounded-xl border border-slate-700 overflow-hidden shadow-inner group" ref={wrapperRef}>
+      <svg ref={svgRef} className="w-full h-full cursor-move outline-none"></svg>
       
       {/* Controls */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2 bg-slate-800/80 p-2 rounded-lg backdrop-blur-sm border border-slate-700">
-         <button onClick={onRefresh} className="p-2 hover:bg-slate-700 rounded text-slate-300" title="Refresh Topology">
+      <div className="absolute top-4 right-4 flex flex-col gap-2 bg-slate-800/90 p-2 rounded-lg backdrop-blur-sm border border-slate-700 shadow-lg">
+         <button onClick={onRefresh} className="p-2 hover:bg-slate-700 rounded text-slate-300 transition-colors" title="Refresh Topology">
             <RefreshCw size={20} />
          </button>
-         <div className="h-px bg-slate-600 my-1"></div>
-         <div className="text-center text-xs text-slate-400 font-mono mb-1">{Math.round(zoomLevel * 100)}%</div>
       </div>
 
-      <div className="absolute bottom-4 left-4 bg-slate-800/80 p-3 rounded-lg backdrop-blur-sm border border-slate-700 text-xs text-slate-300">
-        <div className="flex items-center gap-2 mb-1"><span className="w-3 h-3 rounded-full bg-emerald-500"></span> Online</div>
-        <div className="flex items-center gap-2 mb-1"><span className="w-3 h-3 rounded-full bg-amber-500"></span> Warning</div>
-        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-500"></span> Offline</div>
+      <div className="absolute bottom-4 left-4 bg-slate-800/90 p-4 rounded-lg backdrop-blur-sm border border-slate-700 text-xs text-slate-300 shadow-lg pointer-events-none">
+        <h4 className="font-semibold mb-2 text-slate-400 uppercase tracking-wider">Legend</h4>
+        <div className="flex items-center gap-3 mb-1"><span className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]"></span> Online</div>
+        <div className="flex items-center gap-3 mb-1"><span className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"></span> Warning</div>
+        <div className="flex items-center gap-3"><span className="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]"></span> Offline</div>
+        <div className="mt-2 text-[10px] text-slate-500 border-t border-slate-700 pt-2">
+            Click nodes for details
+        </div>
       </div>
     </div>
   );

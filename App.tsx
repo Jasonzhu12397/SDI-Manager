@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X } from 'lucide-react';
 import Dashboard from './components/Dashboard';
@@ -228,7 +229,7 @@ const App: React.FC = () => {
         </header>
 
         {/* Viewport */}
-        <div className="flex-1 overflow-y-auto p-6 scroll-smooth relative">
+        <div className="flex-1 overflow-y-auto p-6 scroll-smooth">
           {activeTab === 'dashboard' && (
             <Dashboard 
               devices={devices} 

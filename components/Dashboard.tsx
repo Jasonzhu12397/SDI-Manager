@@ -2,7 +2,7 @@
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Device, Alarm, AlarmSeverity, DeviceStatus, DeviceType } from '../types';
-import { Activity, Server, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Activity, Server, AlertTriangle, CheckCircle, ExternalLink } from 'lucide-react';
 
 interface DashboardProps {
   devices: Device[];
@@ -40,8 +40,11 @@ const Dashboard: React.FC<DashboardProps> = ({ devices, alarms, onNavigate }) =>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div 
             onClick={() => onNavigate('devices')}
-            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-blue-500/50 transition-all transform hover:scale-[1.02] group"
+            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-blue-500/50 transition-all transform hover:scale-[1.02] group relative overflow-hidden"
         >
+          <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ExternalLink size={14} className="text-slate-500" />
+          </div>
           <div>
             <p className="text-slate-400 text-sm font-medium group-hover:text-blue-400 transition-colors">Total Devices</p>
             <h3 className="text-2xl font-bold text-white mt-1">{totalDevices}</h3>
@@ -53,8 +56,11 @@ const Dashboard: React.FC<DashboardProps> = ({ devices, alarms, onNavigate }) =>
 
         <div 
             onClick={() => onNavigate('topology')}
-            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-emerald-500/50 transition-all transform hover:scale-[1.02] group"
+            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-emerald-500/50 transition-all transform hover:scale-[1.02] group relative overflow-hidden"
         >
+          <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ExternalLink size={14} className="text-slate-500" />
+          </div>
           <div>
             <p className="text-slate-400 text-sm font-medium group-hover:text-emerald-400 transition-colors">Healthy Devices</p>
             <h3 className="text-2xl font-bold text-emerald-400 mt-1">{onlineDevices}/{totalDevices}</h3>
@@ -66,8 +72,11 @@ const Dashboard: React.FC<DashboardProps> = ({ devices, alarms, onNavigate }) =>
 
         <div 
             onClick={() => onNavigate('alarms')}
-            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-red-500/50 transition-all transform hover:scale-[1.02] group"
+            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-red-500/50 transition-all transform hover:scale-[1.02] group relative overflow-hidden"
         >
+          <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ExternalLink size={14} className="text-slate-500" />
+          </div>
           <div>
             <p className="text-slate-400 text-sm font-medium group-hover:text-red-400 transition-colors">Critical Alarms</p>
             <h3 className="text-2xl font-bold text-red-500 mt-1">{criticalAlarms}</h3>
@@ -79,8 +88,11 @@ const Dashboard: React.FC<DashboardProps> = ({ devices, alarms, onNavigate }) =>
 
         <div 
             onClick={() => onNavigate('alarms')}
-            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-amber-500/50 transition-all transform hover:scale-[1.02] group"
+            className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg flex items-center justify-between cursor-pointer hover:bg-slate-750 hover:border-amber-500/50 transition-all transform hover:scale-[1.02] group relative overflow-hidden"
         >
+          <div className="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ExternalLink size={14} className="text-slate-500" />
+          </div>
           <div>
             <p className="text-slate-400 text-sm font-medium group-hover:text-amber-400 transition-colors">Major Alarms</p>
             <h3 className="text-2xl font-bold text-amber-500 mt-1">{majorAlarms}</h3>
