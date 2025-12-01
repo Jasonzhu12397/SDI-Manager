@@ -82,7 +82,6 @@ def init_db():
             )
         """)
         
-        # Add topology_json column if missing (migration)
         try:
             cur.execute("ALTER TABLE device_status ADD COLUMN topology_json LONGTEXT")
         except mariadb.Error:
@@ -105,7 +104,7 @@ def init_db():
     finally:
         conn.close()
 
-# --- Parsing Logic Provided by User ---
+# --- Parsing Logic ---
 
 def strip_namespace(tag):
     return tag.split("}", 1)[1] if "}" in tag else tag
@@ -139,11 +138,11 @@ def extract_all_data(data):
     for ipv4 in ipv4_networks:
         if isinstance(ipv4, dict):
             network_name = ipv4.get("iPv4NetworkId", "")
-            if "sbi" in network_name.lower():
-                network_info.append({
-                    "networkName": network_name,
-                    "ipAddress": ipv4.get("semAddrActive", "")
-                })
+            # Filter removed: Capture ALL networks
+            network_info.append({
+                "networkName": network_name,
+                "ipAddress": ipv4.get("semAddrActive", "")
+            })
 
     for system in computer_systems:
         if not isinstance(system, dict): continue
@@ -164,6 +163,28 @@ def extract_all_data(data):
             if isinstance(agent, dict) and agent.get("agentId") == "1":
                 agent_ip_address = agent.get("ipAddress", "")
 
+        # Use a flag to check if we found any interfaces. If not, we might still want to add the system.
+        # But based on the provided logic, we iterate interfaces.
+        
+        if not interfaces:
+             # Add system even without interfaces
+             combined_list.append({
+                "type": "computerSystem",
+                "computerSystemId": system_id,
+                "uuId": uu_id,
+                "vpod_name": vpod_name,
+                "interfaceId": "",
+                "macAddress": "",
+                "udevName": "",
+                "pciAddress": "",
+                "switchPortId": "",
+                "switchId": "",
+                "switchType": "",
+                "bmc IPaddress": agent_ip_address,
+                "networkName": "",
+                "ipAddress": ""
+            })
+
         for iface in interfaces:
             if not isinstance(iface, dict): continue
             
@@ -172,7 +193,6 @@ def extract_all_data(data):
             switch_id = switch_info.get("Bridge", "") or switch_info.get("DataBridge", "")
             port_id = switch_info.get("BridgePort", "")
 
-            # Include system even if not connected to switch, for inventory
             switch_type = ""
             if switch_id:
                 switch_type = "leaf" if switch_id.lower().startswith("l") else "control" if switch_id.lower().startswith("c") else ""
@@ -189,15 +209,15 @@ def extract_all_data(data):
                 "switchPortId": port_id,
                 "switchId": switch_id,
                 "switchType": switch_type,
-                "diskId": "",
-                "diskSize": "",
-                "diskwwn": "",
                 "bmc IPaddress": agent_ip_address,
                 "networkName": "",
                 "ipAddress": ""
             }
 
+            # Associate network info if available
             if vpod_name and network_info:
+                # If there are multiple networks, this creates multiple entries per interface
+                # capturing the cross product as per original script logic
                 for info in network_info:
                     entry = base_entry.copy()
                     entry["networkName"] = info["networkName"]
@@ -214,7 +234,12 @@ def fetch_netconf_data():
         return
 
     cur = conn.cursor()
-    cur.execute("SELECT id, name, ip, port, username, password, type, auth_type, ssh_key FROM devices")
+    try:
+        cur.execute("SELECT id, name, ip, port, username, password, type, auth_type, ssh_key FROM devices")
+    except mariadb.Error:
+        # Fallback if columns missing
+        cur.execute("SELECT id, name, ip, port, username, password, type, 'PASSWORD', '' FROM devices")
+        
     devices = cur.fetchall()
 
     for dev in devices:
@@ -241,13 +266,12 @@ def fetch_netconf_data():
             
             if m:
                 connection_success = True
-                response = m.get() # Get full config/state
+                response = m.get() 
                 root = ET.fromstring(response.xml)
                 response_dict = xml_to_dict(root)
                 
-                # Extract Data using user logic
                 data_node = response_dict.get("data", {}).get("ManagedElement", {})
-                if isinstance(data_node, list):
+                if isinstance(data_node, list) and len(data_node) > 0:
                     data_node = data_node[0]
                 
                 if isinstance(data_node, dict):
@@ -259,23 +283,23 @@ def fetch_netconf_data():
             print(f"Fetch Error {ip}: {e}")
             pass
 
-        # Use mock data if connection failed (for dev environment)
+        # Use mock data if connection failed (Dev mode)
         if not connection_success:
-             # Generate a mock topology report
              parsed_data = []
+             # Mock data structure matching extraction
              for i in range(1, 4):
                  parsed_data.append({
-                     "computerSystemId": f"server-{i}",
-                     "vpod_name": f"vpod-{i}",
-                     "switchId": "leaf-01",
+                     "computerSystemId": f"mock-server-{i}",
+                     "vpod_name": f"vpod-mock",
+                     "switchId": "mock-leaf-01",
                      "switchPortId": f"1/1/{i}",
-                     "bmc IPaddress": f"10.0.0.{10+i}"
+                     "bmc IPaddress": f"10.0.0.{100+i}",
+                     "type": "NetworkInterface"
                  })
 
-        # Update DB
         try:
             json_str = json.dumps(parsed_data)
-            status_val = 'ONLINE' if connection_success else 'WARNING' # Warning if using mock
+            status_val = 'ONLINE' if connection_success else 'WARNING'
             if not connection_success and len(parsed_data) == 0:
                 status_val = 'OFFLINE'
 
@@ -398,11 +422,9 @@ def get_snapshot():
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # Get configured controller devices
     cur.execute("SELECT id, name, ip, type FROM devices")
     devices = {r[0]: {'id': r[0], 'name': r[1], 'ip': r[2], 'type': r[3], 'status': 'ONLINE'} for r in cur.fetchall()}
     
-    # Get topology data
     try:
         cur.execute("SELECT device_id, status, topology_json FROM device_status")
     except mariadb.Error:
@@ -421,7 +443,9 @@ def get_snapshot():
             try:
                 records = json.loads(topo_json)
                 for item in records:
-                    # Create Node for ComputerSystem
+                    # Logic to visualize the raw data in the topology
+                    
+                    # 1. Server Node
                     sys_id = item.get('computerSystemId')
                     if sys_id and sys_id not in discovered_nodes:
                         discovered_nodes[sys_id] = {
@@ -435,7 +459,7 @@ def get_snapshot():
                             'memoryUsage': 20
                         }
                     
-                    # Create Node for Switch
+                    # 2. Switch Node
                     sw_id = item.get('switchId')
                     if sw_id and sw_id not in discovered_nodes:
                          discovered_nodes[sw_id] = {
@@ -449,16 +473,25 @@ def get_snapshot():
                             'memoryUsage': 10
                          }
 
-                    # Create Link
+                    # 3. Link (Interface -> Switch Port)
                     if sys_id and sw_id:
+                        # Avoid duplicate links
                         link_key = f"{sys_id}-{sw_id}"
-                        discovered_links.append({
-                            'source': sys_id,
-                            'target': sw_id,
-                            'bandwidth': '10Gbps',
-                            'status': 'UP',
-                            'label': item.get('switchPortId')
-                        })
+                        # Simple check for duplicates
+                        is_duplicate = False
+                        for l in discovered_links:
+                            if l['source'] == sys_id and l['target'] == sw_id:
+                                is_duplicate = True
+                                break
+                        
+                        if not is_duplicate:
+                            discovered_links.append({
+                                'source': sys_id,
+                                'target': sw_id,
+                                'bandwidth': '10Gbps',
+                                'status': 'UP',
+                                'label': item.get('switchPortId')
+                            })
 
             except json.JSONDecodeError:
                 pass
