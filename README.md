@@ -62,7 +62,7 @@ SDI Manager is a comprehensive Network Management System (NMS) designed to monit
 3.  **Access the Dashboard**
     Open your browser and navigate to:
     ```
-    http://localhost:3000
+    http://localhost:8090
     ```
 
 ### Default Credentials
