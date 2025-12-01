@@ -31,9 +31,11 @@ const DeviceDetails: React.FC<DeviceDetailsProps> = ({ device, onBack }) => {
               <Activity size={14} className={device.status === 'ONLINE' ? 'text-emerald-400' : 'text-red-400'} /> 
               {device.status}
             </span>
-            <span className="flex items-center gap-1">
-               <Cpu size={14}/> Load: {device.cpuLoad}%
-            </span>
+            {device.cpuLoad > 0 && (
+                <span className="flex items-center gap-1">
+                   <Cpu size={14}/> Load: {device.cpuLoad}%
+                </span>
+            )}
             <span>Uptime: {device.uptime}</span>
           </div>
         </div>
@@ -61,7 +63,7 @@ const DeviceDetails: React.FC<DeviceDetailsProps> = ({ device, onBack }) => {
                   {device.details?.interfaces?.map((iface, idx) => (
                     <tr key={idx} className="hover:bg-slate-700/30">
                       <td className="px-4 py-3 font-medium text-white">{iface.id}</td>
-                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{iface.mac}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-slate-400">{iface.mac || '-'}</td>
                       <td className="px-4 py-3">
                         {iface.connectedSwitch ? (
                           <span className="flex items-center gap-1.5 text-xs bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded border border-emerald-500/20 w-fit">
@@ -97,7 +99,7 @@ const DeviceDetails: React.FC<DeviceDetailsProps> = ({ device, onBack }) => {
                   {device.details?.disks?.map((disk, idx) => (
                     <tr key={idx} className="hover:bg-slate-700/30">
                       <td className="px-4 py-3 font-medium text-white">{disk.id}</td>
-                      <td className="px-4 py-3">{disk.size}</td>
+                      <td className="px-4 py-3">{disk.size || '-'}</td>
                       <td className="px-4 py-3">
                         <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-xs border border-emerald-500/20">
                           {disk.status || 'OK'}
