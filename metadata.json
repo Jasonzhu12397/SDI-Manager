@@ -1,0 +1,5 @@
+{
+  "name": "SDI Manager",
+  "description": "SDI Manager - NETCONF Dashboard",
+  "requestFramePermissions": []
+}
