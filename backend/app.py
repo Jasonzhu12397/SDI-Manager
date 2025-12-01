@@ -23,38 +23,6 @@ DB_CONFIG = {
     'port': 3306
 }
 
-# Optimized Filter - includes InBandInventory (Disk) and BridgePorts
-NETCONF_FILTER = """
-<filter>
-  <ManagedElement>
-    <managedElementId>1</managedElementId>
-    <Equipment>
-      <ComputerSystem>
-        <uuId/>
-        <computerSystemId/>
-        <SystemEthernetInterface/>
-        <InBandInventory>
-             <Disk/>
-        </InBandInventory>
-        <Agent/>
-      </ComputerSystem>
-      <Switch/>
-      <RedfishAsset>
-        <ipAddress/>
-      </RedfishAsset>
-    </Equipment>
-    <SemcFunction>
-      <Trm>
-        <BridgePort/>
-      </Trm>
-      <Networks>
-        <IPv4Network/>
-      </Networks>
-    </SemcFunction>
-  </ManagedElement>
-</filter>
-"""
-
 def get_db_connection():
     try:
         conn = mariadb.connect(**DB_CONFIG)
@@ -82,7 +50,7 @@ def init_db():
     conn = get_db_connection()
     if not conn:
         return
-
+    
     cur = conn.cursor()
     try:
         cur.execute("""
@@ -92,7 +60,7 @@ def init_db():
                 password VARCHAR(255) NOT NULL
             )
         """)
-
+        
         try:
             cur.execute("INSERT INTO users (username, password) VALUES (?, ?)", ('admin', 'admin'))
             conn.commit()
@@ -113,8 +81,6 @@ def init_db():
             )
         """)
 
-        # Updated schema to hold detailed info in topology_json or a new field if needed.
-        # We reuse topology_json to store the array of parsed node data which includes details.
         cur.execute("""
             CREATE TABLE IF NOT EXISTS device_status (
                 device_id VARCHAR(50) PRIMARY KEY,
@@ -127,7 +93,7 @@ def init_db():
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         """)
-
+        
         try:
             cur.execute("ALTER TABLE device_status ADD COLUMN topology_json LONGTEXT")
         except mariadb.Error:
@@ -143,7 +109,7 @@ def init_db():
                 FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
             )
         """)
-
+        
         conn.commit()
     except mariadb.Error as e:
         print(f"DB Init Error: {e}")
@@ -172,64 +138,40 @@ def xml_to_dict(elem):
 def extract_all_data(data):
     combined_list = []
     equipment = data.get("Equipment", {})
-
-    # 1. Parse Switches (Network Devices)
+    
+    # --- 1. NETWORK DEVICES (Switches) ---
     switches = equipment.get("Switch", [])
     if not isinstance(switches, list):
         switches = [switches]
-
-    # Parse global BridgePorts to map to switches
-    trm = data.get("SemcFunction", {}).get("Trm", {})
-    bridge_ports = trm.get("BridgePort", [])
-    if not isinstance(bridge_ports, list):
-        bridge_ports = [bridge_ports]
-
+    
     for sw in switches:
         sw_id = ""
         if isinstance(sw, str):
             sw_id = sw
         elif isinstance(sw, dict):
             sw_id = sw.get("switchId") or sw.get("id") or sw.get("name")
-
+        
         if sw_id:
-             # Find ports for this switch (Mocking logic here as exact mapping depends on BridgePort naming convention)
-             # Assuming BridgePorts might have labels containing switch IDs or similar.
-             # For detailed view we just list some ports.
-             my_ports = []
-             for bp in bridge_ports:
-                 if isinstance(bp, dict):
-                     bp_id = bp.get("bridgePortId", "")
-                     # Simple heuristic: if port ID starts with switch ID or similar (often complex in real life)
-                     # Here we just add some raw ports for demo if available
-                     my_ports.append({
-                         "id": bp_id,
-                         "status": bp.get("operState", "UNKNOWN"),
-                         "speed": "10Gbps" # Placeholder
-                     })
-
              combined_list.append({
                  "category": "NETWORK",
                  "id": sw_id,
                  "type": "SWITCH",
-                 "status": "ONLINE",
-                 "details": {
-                     "ports": my_ports if my_ports else [{"id": "1/1/1", "status": "UP", "speed": "100Gbps"}]
-                 }
+                 "status": "ONLINE"
              })
 
-    # 2. Parse Computer Systems (Compute Nodes)
+    # --- 2. COMPUTE NODES (ComputerSystem) ---
     computer_systems = equipment.get("ComputerSystem", [])
     if not isinstance(computer_systems, list):
         computer_systems = [computer_systems]
 
     for system in computer_systems:
         if not isinstance(system, dict): continue
-
+        
         system_id = system.get("computerSystemId", "")
         uu_id = system.get("uuId", "")
         vpod_data = system.get("vpod")
         vpod_name = vpod_data if isinstance(vpod_data, str) else ""
-
+        
         interfaces = system.get("SystemEthernetInterface", [])
         if not isinstance(interfaces, list): interfaces = [interfaces]
 
@@ -239,30 +181,31 @@ def extract_all_data(data):
         for agent in agents:
             if isinstance(agent, dict) and agent.get("agentId") == "1":
                 agent_ip_address = agent.get("ipAddress", "")
+        
+        # Base Node Object
+        base_node = {
+            "category": "COMPUTE",
+            "type": "SERVER",
+            "id": system_id,
+            "computerSystemId": system_id,
+            "uuId": uu_id,
+            "vpod_name": vpod_name,
+            "bmc IPaddress": agent_ip_address,
+        }
+        
+        if not interfaces:
+             combined_list.append(base_node)
 
-        # Disks
-        disks = []
-        in_band = system.get("InBandInventory", {})
-        raw_disks = in_band.get("Disk", [])
-        if not isinstance(raw_disks, list): raw_disks = [raw_disks]
-        for d in raw_disks:
-            if isinstance(d, dict):
-                disks.append({
-                    "id": d.get("diskId", "unknown"),
-                    "size": d.get("capacity", "unknown"),
-                    "status": "OK"
-                })
-
-        # Interfaces
-        parsed_interfaces = []
+        # Parse Links
         for iface in interfaces:
             if not isinstance(iface, dict): continue
-
+            
             connected_to = iface.get("connectedTo", "")
             switch_id = ""
             port_id = ""
 
             if connected_to:
+                # Parse 'Bridge=X,BridgePort=Y' string
                 parts = connected_to.split(",")
                 for part in parts:
                     if "=" in part:
@@ -271,13 +214,6 @@ def extract_all_data(data):
                             switch_id = val
                         elif key == "BridgePort":
                             port_id = val
-
-            parsed_interfaces.append({
-                "id": iface.get("systemEthernetInterfaceId", ""),
-                "mac": iface.get("macAddress", ""),
-                "connectedSwitch": switch_id,
-                "connectedPort": port_id
-            })
 
             if switch_id:
                 combined_list.append({
@@ -288,20 +224,10 @@ def extract_all_data(data):
                     "target_port": port_id,
                     "status": "UP"
                 })
-
-        combined_list.append({
-            "category": "COMPUTE",
-            "type": "SERVER",
-            "id": system_id,
-            "computerSystemId": system_id,
-            "uuId": uu_id,
-            "vpod_name": vpod_name,
-            "bmc IPaddress": agent_ip_address,
-            "details": {
-                "disks": disks,
-                "interfaces": parsed_interfaces
-            }
-        })
+            
+            # Ensure node is added
+            if base_node not in combined_list:
+                combined_list.append(base_node)
 
     return combined_list
 
@@ -320,44 +246,44 @@ def fetch_netconf_data():
         except:
              conn.close()
              return
-
+        
     devices = cur.fetchall()
 
     for dev in devices:
         dev_id, name, ip, port, user, password, dtype, auth_type, ssh_key = dev
-
+        
         parsed_data = []
         connection_success = False
-
+        
         try:
             m = None
             if auth_type == 'KEY' and ssh_key:
                 with tempfile.NamedTemporaryFile(mode='w', delete=False) as key_file:
                     key_file.write(ssh_key)
                     key_file_path = key_file.name
-
+                
                 m = manager.connect(host=ip, port=port, username=user, key_filename=key_file_path,
                                     hostkey_verify=False, timeout=60, allow_agent=False, look_for_keys=False,
                                     device_params={'name': 'default'})
                 os.unlink(key_file_path)
             else:
-                m = manager.connect(host=ip, port=port, username=user, password=password,
+                m = manager.connect(host=ip, port=port, username=user, password=password, 
                                     hostkey_verify=False, timeout=60, allow_agent=False, look_for_keys=False,
                                     device_params={'name': 'default'})
-
+            
             if m:
                 connection_success = True
-                response = m.get(filter=NETCONF_FILTER)
+                response = m.get() 
                 root = ET.fromstring(response.xml)
                 response_dict = xml_to_dict(root)
-
+                
                 data_node = response_dict.get("data", {}).get("ManagedElement", {})
                 if isinstance(data_node, list) and len(data_node) > 0:
                     data_node = data_node[0]
-
+                
                 if isinstance(data_node, dict):
                     parsed_data = extract_all_data(data_node)
-
+                
                 m.close_session()
 
         except Exception as e:
@@ -365,18 +291,15 @@ def fetch_netconf_data():
             pass
 
         if not connection_success:
-             # Mock Data
+             # Mock Data for demonstration if connection fails
              parsed_data = []
              for i in range(1, 4):
                  parsed_data.append({
                      "category": "COMPUTE",
                      "id": f"worker-node-{i}",
+                     "computerSystemId": f"worker-node-{i}",
                      "type": "SERVER",
                      "bmc IPaddress": f"10.0.0.{100+i}",
-                     "details": {
-                         "disks": [{"id": "sda", "size": "500GB", "status": "OK"}],
-                         "interfaces": [{"id": "eth0", "mac": f"00:11:22:33:44:0{i}", "connectedSwitch": "Core-Switch-01", "connectedPort": f"1/1/{i}"}]
-                     }
                  })
                  parsed_data.append({
                     "category": "LINK",
@@ -386,15 +309,12 @@ def fetch_netconf_data():
                     "target_port": f"1/1/{i}",
                     "status": "UP"
                  })
-
+             
              parsed_data.append({
                  "category": "NETWORK",
                  "id": "Core-Switch-01",
                  "type": "SWITCH",
-                 "status": "ONLINE",
-                 "details": {
-                     "ports": [{"id": "1/1/1", "status": "UP", "speed": "10Gbps", "connectedDevice": "worker-node-1"}]
-                 }
+                 "status": "ONLINE"
              })
 
         try:
@@ -406,7 +326,7 @@ def fetch_netconf_data():
             cur.execute("""
                 INSERT INTO device_status (device_id, status, uptime, cpu_load, memory_usage, topology_json)
                 VALUES (?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE
+                ON DUPLICATE KEY UPDATE 
                 status=VALUES(status), topology_json=VALUES(topology_json)
             """, (dev_id, status_val, 'Unknown', 0, 0, json_str))
 
@@ -420,6 +340,8 @@ scheduler = BackgroundScheduler()
 scheduler.add_job(fetch_netconf_data, 'cron', hour=0, minute=0)
 scheduler.start()
 
+# --- Routes ---
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
@@ -429,7 +351,9 @@ def login():
     cur.execute("SELECT password FROM users WHERE username = ?", (data['username'],))
     row = cur.fetchone()
     conn.close()
-    if row and row[0] == data['password']: return jsonify({'success': True})
+    
+    if row and row[0] == data['password']:
+        return jsonify({'success': True})
     return jsonify({'success': False}), 401
 
 @app.route('/api/register', methods=['POST'])
@@ -455,6 +379,7 @@ def change_password():
     cur = conn.cursor()
     cur.execute("SELECT password FROM users WHERE username = ?", (data['username'],))
     row = cur.fetchone()
+    
     if row and row[0] == data['oldPassword']:
         cur.execute("UPDATE users SET password = ? WHERE username = ?", (data['newPassword'], data['username']))
         conn.commit()
@@ -512,10 +437,10 @@ def get_snapshot():
     conn = get_db_connection()
     if not conn: return jsonify({'nodes': [], 'links': [], 'alarms': []})
     cur = conn.cursor()
-
+    
     cur.execute("SELECT id, name, ip, type FROM devices")
     configured_devices = {r[0]: {'id': r[0], 'name': r[1], 'ip': r[2], 'type': r[3], 'status': 'ONLINE'} for r in cur.fetchall()}
-
+    
     try:
         cur.execute("SELECT device_id, status, topology_json FROM device_status")
     except mariadb.Error:
@@ -523,32 +448,45 @@ def get_snapshot():
 
     discovered_nodes = {}
     discovered_links = []
-
+    
     for r in cur.fetchall():
         dev_id = r[0]
         if dev_id in configured_devices:
             configured_devices[dev_id]['status'] = r[1]
-
+        
         topo_json = r[2]
         if topo_json:
             try:
                 records = json.loads(topo_json)
                 for item in records:
                     category = item.get('category')
-
-                    if category == 'COMPUTE' or category == 'NETWORK':
+                    
+                    if category == 'COMPUTE':
                         node_id = item.get('id')
                         if node_id:
                             discovered_nodes[node_id] = {
                                 'id': node_id,
                                 'name': node_id,
                                 'ip': item.get('bmc IPaddress') or 'N/A',
-                                'type': item.get('type', 'SERVER'),
-                                'status': item.get('status', 'ONLINE'),
+                                'type': 'SERVER',
+                                'status': 'ONLINE',
                                 'uptime': '10d',
                                 'cpuLoad': 10,
-                                'memoryUsage': 20,
-                                'details': item.get('details') # Include details
+                                'memoryUsage': 20
+                            }
+                    
+                    elif category == 'NETWORK':
+                        node_id = item.get('id')
+                        if node_id:
+                            discovered_nodes[node_id] = {
+                                'id': node_id,
+                                'name': node_id,
+                                'ip': 'N/A',
+                                'type': 'SWITCH',
+                                'status': 'ONLINE',
+                                'uptime': '100d',
+                                'cpuLoad': 5,
+                                'memoryUsage': 10
                             }
 
                     elif category == 'LINK':
@@ -560,12 +498,12 @@ def get_snapshot():
                                 if l['source'] == src and l['target'] == tgt:
                                     is_dup = True
                                     break
-
+                            
                             if not is_dup:
                                 s_iface = item.get('source_interface', '')
                                 t_port = item.get('target_port', '')
                                 label = f"{s_iface} ↔ {t_port}"
-
+                                
                                 discovered_links.append({
                                     'source': src,
                                     'target': tgt,
