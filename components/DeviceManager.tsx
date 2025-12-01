@@ -11,7 +11,6 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
   const [devices, setDevices] = useState<NetconfDeviceConfig[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   
-  // Determine default type based on filter
   const defaultType = filterCategory === 'COMPUTE' ? DeviceType.SERVER : DeviceType.ROUTER;
 
   const [newDevice, setNewDevice] = useState<Partial<NetconfDeviceConfig>>({
@@ -27,7 +26,6 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
     loadDevices();
   }, []);
 
-  // Reset form and adding state when filter changes (e.g. switching tabs)
   useEffect(() => {
     setNewDevice(prev => ({
         ...prev,
@@ -41,11 +39,10 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
     setDevices(fetched);
   };
 
-  // Filter devices based on the category prop
   const displayedDevices = devices.filter(device => {
-      if (!filterCategory) return true; // Show all if no filter
+      if (!filterCategory) return true; 
       if (filterCategory === 'COMPUTE') return device.type === DeviceType.SERVER;
-      if (filterCategory === 'NETWORK') return device.type !== DeviceType.SERVER; // Assume Router, Switch, Firewall are network
+      if (filterCategory === 'NETWORK') return device.type !== DeviceType.SERVER;
       return true;
   });
 
@@ -73,7 +70,6 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
       await loadDevices();
       
       setIsAdding(false);
-      // Reset form
       setNewDevice({ 
         port: 830, 
         type: defaultType, 
@@ -153,7 +149,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white"
                 value={newDevice.type}
                 onChange={e => setNewDevice({...newDevice, type: e.target.value as any})}
-                disabled={!!filterCategory} // Disable if filtered
+                disabled={!!filterCategory}
               >
                  {(!filterCategory || filterCategory === 'NETWORK') && (
                     <>
