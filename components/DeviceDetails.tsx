@@ -1,6 +1,6 @@
 import React from 'react';
 import { Device, DeviceType } from '../types';
-import { ArrowLeft, Server, HardDrive, Network, Activity, Wifi, Cpu } from 'lucide-react';
+import { ArrowLeft, Server, HardDrive, Network, Activity, Wifi, Cpu, RectangleHorizontal } from 'lucide-react';
 
 interface DeviceDetailsProps {
   device: Device;
@@ -22,7 +22,7 @@ const DeviceDetails: React.FC<DeviceDetailsProps> = ({ device, onBack }) => {
         </button>
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
-            {isCompute ? <Server className="text-blue-400"/> : <Network className="text-purple-400"/>}
+            {isCompute ? <Server className="text-blue-400"/> : <RectangleHorizontal className="text-indigo-400"/>}
             {device.name}
           </h2>
           <div className="flex gap-6 text-sm text-slate-400 mt-1">
