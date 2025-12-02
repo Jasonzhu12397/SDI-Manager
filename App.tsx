@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Switch, RefreshCw, LogOut, User } from 'lucide-react';
+import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Router, RefreshCw, LogOut, User, RectangleHorizontal } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import TopologyGraph from './components/TopologyGraph';
 import AlarmTable from './components/AlarmTable';
@@ -131,7 +131,7 @@ const App: React.FC = () => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'compute', label: 'Compute Nodes', icon: Server },
-    { id: 'network', label: 'Network Devices', icon: Switch },
+    { id: 'network', label: 'Network Devices', icon: RectangleHorizontal },
     { id: 'devices', label: 'Device Manager', icon: Settings },
     { id: 'topology', label: 'Topology Map', icon: Network },
     { id: 'alarms', label: 'Alarms & Events', icon: AlertOctagon },
@@ -184,14 +184,14 @@ const App: React.FC = () => {
 
         {/* User Profile & Logout Section */}
         <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-           <div className="flex items-center justify-between mb-4 px-2">
+           <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 border border-slate-600">
                     <User size={16} />
                  </div>
                  <div className="flex flex-col">
                     <span className="text-sm font-semibold text-white">{currentUser}</span>
-                    <span className="text-[10px] text-slate-400 uppercase">Administrator</span>
+                    <span className="text-[10px] text-slate-400 uppercase">Admin</span>
                  </div>
               </div>
               <button 
@@ -203,13 +203,15 @@ const App: React.FC = () => {
               </button>
            </div>
            
-           <button 
-              onClick={handleLogout} 
-              className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 px-4 py-2 rounded-lg transition-all duration-200 font-medium text-sm group"
-           >
-              <LogOut size={16} className="group-hover:-translate-x-0.5 transition-transform"/>
-              Sign Out
-           </button>
+           <div className="flex justify-end">
+             <button 
+                onClick={handleLogout} 
+                className="flex items-center gap-2 text-red-400 hover:text-red-300 text-xs font-medium px-3 py-1.5 rounded hover:bg-red-500/10 transition-colors"
+             >
+                <LogOut size={14} />
+                Sign Out
+             </button>
+           </div>
         </div>
       </aside>
 
