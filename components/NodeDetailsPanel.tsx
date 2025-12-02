@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Server, Activity, Clock, Cpu, Network, Router, Box } from 'lucide-react';
+import { X, Server, Activity, Clock, Cpu, Network, Router, Box, RectangleHorizontal } from 'lucide-react';
 import { Device, Link, DeviceType } from '../types';
 
 interface NodeDetailsPanelProps {
@@ -11,12 +11,11 @@ interface NodeDetailsPanelProps {
 const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({ device, links, onClose }) => {
   if (!device) return null;
 
-  // Find connections related to this device
   const connections = links.filter(l => l.source === device.id || l.target === device.id);
 
   const getDeviceIcon = () => {
       if (device.type === DeviceType.SERVER) return <Server size={24} />;
-      if (device.type === DeviceType.SWITCH) return <Network size={24} />;
+      if (device.type === DeviceType.SWITCH) return <RectangleHorizontal size={24} />;
       if (device.type === DeviceType.ROUTER) return <Router size={24} />;
       return <Box size={24} />;
   };
