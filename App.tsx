@@ -12,11 +12,14 @@ import { Device, Link, Alarm } from './types';
 
 // Main App Component
 const App: React.FC = () => {
-  // Auth State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [currentUser, setCurrentUser] = useState('admin');
+  // Auth State - Initialize from localStorage to persist login across refreshes
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('sdi_auth_token') === 'true';
+  });
+  const [currentUser, setCurrentUser] = useState(() => {
+    return localStorage.getItem('sdi_user') || 'admin';
+  });
 
-  // Add new tabs: 'compute' and 'network'
   const [activeTab, setActiveTab] = useState<'dashboard' | 'topology' | 'alarms' | 'config' | 'devices' | 'compute' | 'network'>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
@@ -44,19 +47,21 @@ const App: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     const data = await api.getSnapshot();
-    setDevices(data.nodes);
-    setLinks(data.links);
-    setAlarms(data.alarms);
+    if (data && data.nodes) {
+        setDevices(data.nodes);
+        setLinks(data.links || []);
+        setAlarms(data.alarms || []);
+    }
     setLoading(false);
   };
 
   const handleManualFetch = async () => {
     setLoading(true);
     await api.triggerFetch();
-    // Wait a moment for backend to process mock/real fetch then reload UI
+    // Wait a moment for backend to process fetch then reload UI
     setTimeout(() => {
         fetchData();
-    }, 1500);
+    }, 2000);
   };
 
   const handleClearAlarm = async (id: string) => {
@@ -99,8 +104,16 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = (user: string) => {
+    localStorage.setItem('sdi_auth_token', 'true');
+    localStorage.setItem('sdi_user', user);
     setCurrentUser(user);
     setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('sdi_auth_token');
+    localStorage.removeItem('sdi_user');
+    setIsAuthenticated(false);
   };
 
   const handleNavigate = (tab: any) => {
@@ -115,7 +128,6 @@ const App: React.FC = () => {
     return <Login onLogin={handleLoginSuccess} />;
   }
 
-  // Updated Sidebar Items
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'compute', label: 'Compute Nodes', icon: Server },
@@ -186,7 +198,7 @@ const App: React.FC = () => {
                         <Lock size={12}/> Password
                     </button>
                     <button 
-                        onClick={() => setIsAuthenticated(false)} 
+                        onClick={handleLogout} 
                         className="text-xs bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2 py-1.5 rounded transition-colors"
                     >
                         Sign Out
@@ -240,16 +252,10 @@ const App: React.FC = () => {
             />
           )}
           
-          {/* New Device Manager Routes with Filtering */}
-          {activeTab === 'devices' && (
-            <DeviceManager />
-          )}
-          {activeTab === 'compute' && (
-            <DeviceManager filterCategory="COMPUTE" />
-          )}
-          {activeTab === 'network' && (
-            <DeviceManager filterCategory="NETWORK" />
-          )}
+          {/* Device Manager Routes */}
+          {activeTab === 'devices' && <DeviceManager />}
+          {activeTab === 'compute' && <DeviceManager filterCategory="COMPUTE" />}
+          {activeTab === 'network' && <DeviceManager filterCategory="NETWORK" />}
           
           {activeTab === 'topology' && (
             <TopologyGraph 
