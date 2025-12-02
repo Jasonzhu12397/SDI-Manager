@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Router } from 'lucide-react';
+import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Router, RefreshCw } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import TopologyGraph from './components/TopologyGraph';
 import AlarmTable from './components/AlarmTable';
@@ -12,7 +12,7 @@ import { Device, Link, Alarm } from './types';
 
 // Main App Component
 const App: React.FC = () => {
-  // Auth State - Initialize from localStorage to persist login across refreshes
+  // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('sdi_auth_token') === 'true';
   });
@@ -227,9 +227,16 @@ const App: React.FC = () => {
              <button 
                 onClick={handleManualFetch}
                 disabled={loading}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-medium rounded-lg transition-colors shadow-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-medium rounded-lg transition-colors shadow-sm min-w-[120px] justify-center"
              >
-                {loading ? 'Executing NETCONF...' : 'Fetch Data'}
+                {loading ? (
+                   <>
+                     <RefreshCw size={16} className="animate-spin"/>
+                     Syncing...
+                   </>
+                ) : (
+                   'Sync Data'
+                )}
              </button>
 
              <button 
