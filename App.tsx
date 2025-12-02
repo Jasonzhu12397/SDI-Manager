@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Router, RefreshCw, LogOut, User } from 'lucide-react';
+import { LayoutDashboard, Network, AlertOctagon, FileDiff, Download, Menu, Share2, Settings, Lock, X, Server, Switch, RefreshCw, LogOut, User } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import TopologyGraph from './components/TopologyGraph';
 import AlarmTable from './components/AlarmTable';
@@ -131,7 +131,7 @@ const App: React.FC = () => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'compute', label: 'Compute Nodes', icon: Server },
-    { id: 'network', label: 'Network Devices', icon: Router },
+    { id: 'network', label: 'Network Devices', icon: Switch },
     { id: 'devices', label: 'Device Manager', icon: Settings },
     { id: 'topology', label: 'Topology Map', icon: Network },
     { id: 'alarms', label: 'Alarms & Events', icon: AlertOctagon },
