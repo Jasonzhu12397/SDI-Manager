@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NetconfDeviceConfig, DeviceType, AuthType, Device } from '../types';
-import { Plus, Trash2, Server, Save, X, Key, Network, Box, Router, ChevronRight, Monitor, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Trash2, Server, Save, X, Key, Network, Box, Router, ChevronRight, CheckCircle, XCircle, AlertTriangle, RectangleHorizontal } from 'lucide-react';
 import { api } from '../services/apiService';
 import DeviceDetails from './DeviceDetails';
 
@@ -247,7 +247,7 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
               <th className="px-6 py-4">Name</th>
               <th className="px-6 py-4">IP Address</th>
               <th className="px-6 py-4">Type</th>
-              <th className="px-6 py-4">Connection Status</th>
+              <th className="px-6 py-4">Auth Status</th>
               <th className="px-6 py-4 text-right">Actions</th>
             </tr>
           </thead>
@@ -259,7 +259,9 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
                 onClick={() => setSelectedDevice(device)}
               >
                 <td className="px-6 py-4 font-medium text-white flex items-center gap-3">
-                  {device.type === DeviceType.SERVER ? <Server size={18} className="text-blue-400"/> : <Router size={18} className="text-purple-400"/>}
+                  {device.type === DeviceType.SERVER ? <Server size={18} className="text-blue-400"/> : 
+                   device.type === DeviceType.SWITCH ? <RectangleHorizontal size={18} className="text-indigo-400"/> :
+                   <Router size={18} className="text-purple-400"/>}
                   {device.name}
                 </td>
                 <td className="px-6 py-4 font-mono text-slate-400">{device.ip}</td>
@@ -270,22 +272,25 @@ const DeviceManager: React.FC<DeviceManagerProps> = ({ filterCategory }) => {
                 </td>
                 <td className="px-6 py-4">
                    {device.status === 'ONLINE' ? (
-                        <span className="flex items-center gap-2 text-xs font-bold text-emerald-400 bg-emerald-400/10 px-3 py-1 rounded-full border border-emerald-400/20 w-fit" title="NETCONF Authenticated & Connected">
-                            <CheckCircle size={14} /> Connected
-                        </span>
+                        <div className="flex items-center gap-2 text-emerald-400" title="NETCONF Authenticated">
+                            <CheckCircle size={16} className="fill-emerald-400/10"/>
+                            <span className="text-xs font-bold">Connected</span>
+                        </div>
                    ) : device.status === 'WARNING' ? (
-                        <span className="flex items-center gap-2 text-xs font-bold text-amber-400 bg-amber-400/10 px-3 py-1 rounded-full border border-amber-400/20 w-fit" title="Connected but with issues">
-                            <AlertTriangle size={14} /> Warning
-                        </span>
+                        <div className="flex items-center gap-2 text-amber-400" title="Connection Issues / Partial Data">
+                            <AlertTriangle size={16} className="fill-amber-400/10"/>
+                            <span className="text-xs font-bold">Warning</span>
+                        </div>
                    ) : (
-                        <span className="flex items-center gap-2 text-xs font-bold text-red-400 bg-red-400/10 px-3 py-1 rounded-full border border-red-400/20 w-fit" title="NETCONF Failed: Authentication or Network Error">
-                            <XCircle size={14} /> Failed
-                        </span>
+                        <div className="flex items-center gap-2 text-red-400" title="Connection Failed">
+                            <XCircle size={16} className="fill-red-400/10"/>
+                            <span className="text-xs font-bold">Offline</span>
+                        </div>
                    )}
                 </td>
                 <td className="px-6 py-4 text-right flex items-center justify-end">
                   <span className="text-slate-500 opacity-0 group-hover:opacity-100 transition-all text-xs mr-3 flex items-center gap-1">
-                     View Details <ChevronRight size={12}/>
+                     Details <ChevronRight size={12}/>
                   </span>
                   <button 
                     onClick={(e) => handleRemove(device.id, e)}
